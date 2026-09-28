@@ -1,0 +1,20 @@
+name: Offline checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: python3 lead-hunter-builder/scripts/test_builder.py
+      - run: python3 lead-hunter-builder/scripts/build.py --profile lead-hunter-builder/assets/profile.example.json --out .build/example
+      - run: node lead-hunter-builder/scripts/test_engine.mjs .build/example/Code.gs
+      - run: python3 package.py --check

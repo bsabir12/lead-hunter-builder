@@ -1,0 +1,4 @@
+interface:
+  display_name: "Lead Hunter Builder"
+  short_description: "Build a lead hunting sheet for your business"
+  default_prompt: "Use $lead-hunter-builder to build a lead hunting sheet for my business. Guide me one step at a time."

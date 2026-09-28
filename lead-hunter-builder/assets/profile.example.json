@@ -1,0 +1,39 @@
+{
+  "business": {
+    "name": "Example Operations Studio",
+    "offer": "Workflow automation and reporting for independent service businesses.",
+    "buyer": "Owners and operations managers of small service businesses.",
+    "first_offer": "A short discussion of one documented workflow bottleneck.",
+    "services": ["Workflow mapping", "Automation implementation", "Operational reporting"],
+    "portfolio": []
+  },
+  "goal": "clients",
+  "mode": "manual",
+  "fit": [
+    {"key": "fit_buyer", "label": "Target buyer", "evidence": "The buyer is an independent service business seeking help with its own operations.", "weight": 0.3},
+    {"key": "fit_need", "label": "Workflow need", "evidence": "The original request describes repetitive administration, disconnected tools or a reporting bottleneck that our offer addresses.", "weight": 0.5},
+    {"key": "fit_arrangement", "label": "External help welcome", "evidence": "The request explicitly welcomes an external contractor or service provider.", "weight": 0.2}
+  ],
+  "readiness": [
+    {"key": "ready_scope", "label": "Workable scope", "evidence": "The source describes a concrete process, deliverable or outcome to improve.", "weight": 0.4},
+    {"key": "ready_timing", "label": "Timing stated", "evidence": "The buyer states a start date, deadline or current problem needing attention.", "weight": 0.3},
+    {"key": "ready_budget", "label": "Budget supported", "evidence": "The original request states a budget or willingness to pay for the work.", "weight": 0.3}
+  ],
+  "priority": {"match_weight": 0.45, "readiness_weight": 0.3, "freshness_weight": 0.25, "half_life_days": 7},
+  "rules": {"countries": [], "restricted_words": [], "spam_words": [], "max_employees": 0, "min_hourly_usd": 0, "min_fixed_usd": 0, "max_post_age_days": 0},
+  "decision_roles": ["owner", "operations director", "operations manager"],
+  "budget": {"monthly_usd": 0, "people_monthly_usd": 0},
+  "schedule": {"days": [], "hour": 9, "timezone": "Etc/UTC"},
+  "providers": {
+    "jev_model": "jev-1.13.0",
+    "jev_input_usd_per_million": 0.042,
+    "google_usd_per_page": 0.0045,
+    "google_usd_per_start": 0.001,
+    "actor_minimum_caps": {"apify/google-search-scraper": 0.5},
+    "groq_models": [],
+    "gemini_model": "",
+    "tavily_monthly_credits": 0,
+    "apify_monthly_credit": 0
+  },
+  "sources": []
+}

@@ -1,0 +1,15 @@
+.DS_Store
+__pycache__/
+*.pyc
+.build/
+generated/
+business-profile.json
+.env*
+.clasp.json
+.clasprc.json
+credentials*
+*.csv
+*.xlsx
+*.log
+node_modules/
+
