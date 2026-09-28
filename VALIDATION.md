@@ -1,4 +1,4 @@
-# Validation — 1.1.0
+# Validation history — current release 1.2.0
 
 Checked on 28 September 2026. This is a configurable starter with tested local contracts; native Google Sheets behavior and real contact accuracy still require each installer’s pilot.
 
@@ -36,4 +36,4 @@ The original live Lead Hunter script is outside this package and was not modifie
 
 34 builder tests, 115 generated-engine contracts and 19 contact/guidance checks passed offline. The private deployment also passed 399 core/reliability, 32 Hunter, 22 Apollo, 26 progress, 12 layout and legacy migration checks. Native migration fixtures passed; a repeated live layout migration preserved all 383 lead IDs and original non-empty fields. Thirty existing public/source email addresses were copied to their dedicated column. Public artifacts contain no private workbook data or account keys.
 
-The owner’s Hunter account status succeeded with 50 credits remaining. The saved Apollo key did not pass authentication; paid Apollo behavior is covered by response fixtures, not a successful live enrichment claim. No real-person paid enrichment or phone reveal was run. Public users must validate their own keys, endpoint permissions, quotas and selected-row pilot; those entitlements are not transferred with this package.
+The owner’s Hunter account authenticated successfully. One approved, company-evidence-confirmed person was tested through the native selected-contact popup (maximum 1.5 credits). Finder completed with `not_found`, stored the result, and preserved the existing company email. The account balance remained 50 credits; the local conservative ledger reserved 1 credit. No verifier request was needed, so live mailbox verification and delivery remain unverified. The saved Apollo key returned healthy service but `is_logged_in: false`; paid Apollo behavior is covered by response fixtures, not a successful live enrichment claim. No phone reveal or outreach was run. Public users must validate their own keys, endpoint permissions, quotas and selected-row pilot; those entitlements are not transferred with this package.
