@@ -3,6 +3,7 @@
  * menu action on selected rows. The key is stored in Script Properties and is
  * sent only in the x-api-key header. Waterfalls and personal-email reveal are
  * intentionally unavailable.
+ * Health confirms authentication; individual endpoint access depends on the account.
  */
 const APOLLO_DEFAULT_MONTHLY_LIMIT=0;
 const APOLLO_LIMIT_KEY='LH_APOLLO_MONTHLY_LIMIT';
@@ -159,7 +160,11 @@ function findApolloPeopleSelected(){
  const tab=contactSheets_().contacts;let all=contactRows_(tab),done=0;
  for(const lead of ready){
    const domain=professionalDomain_(lead.website),before=cellFillHash_(lead),payload={'q_organization_domains_list[]':[domain],'person_seniorities[]':['owner','founder','c_suite','vp','head','director'],'person_titles[]':BUSINESS_CONFIG.decision_roles,include_similar_titles:false,page:1,per_page:5};
-   let result;try{result=apolloRequest_('search',domain,'mixed_people/api_search','post',payload,0);}catch(e){ss.toast(redactSecretText_(e.message));break;}
+   let result;try{result=apolloRequest_('search',domain,'mixed_people/api_search','post',payload,0);}catch(e){
+     APOLLO_APPROVAL=null;
+     ui.alert('Apollo search unavailable',redactSecretText_(e.message)+'\n\nCandidates added before this error: '+done+'. No further requests were made. Review Apollo endpoint access before retrying.',ui.ButtonSet.OK);
+     ss.setActiveSheet(tab);return;
+   }
    const live=cellFillRow_(leadData_(sh),lead.id);if(!live||cellFillHash_(live)!==before)continue;
    const candidates=apolloCandidates_(result,lead);for(const c of candidates){if(!all.some(x=>x.lead_id===c.lead_id&&x.provider_person_id===c.provider_person_id)){tab.appendRow(CONTACT_COLS.map(k=>sheetValue_(c[k]??'')));all.push(c);done++;}}
  }

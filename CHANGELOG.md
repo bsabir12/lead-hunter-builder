@@ -2,6 +2,8 @@
 
 Separate Leads email/phone fields, free public-company phone lookup with provenance, and display-only next-tool/credit guidance. Optional selected-only Apollo search, work email and person-phone enrichment with header-only credentials, zero default paid cap, no waterfalls and no automatic sends. Existing source handles, identities, human edits and contact suppression are preserved.
 
+Apollo search errors now stop with an explicit access-error popup, preserving the provider error instead of reporting a successful empty result. Real-account validation distinguishes key authentication, available credits and endpoint permissions; a Free-plan denial is covered by a failing-first handler regression.
+
 # Changelog
 
 ## 1.1.0 — 2026-09-28
