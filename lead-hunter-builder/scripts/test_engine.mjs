@@ -1,5 +1,6 @@
 // Offline behavioral contracts for the generated starter; unstubbed networking fails.
 import fs from 'node:fs';
+import {coldContracts} from './cold_contracts.mjs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -128,5 +129,6 @@ test('supported anonymous identity clue reaches name extraction',()=>{const e=en
 test('assistant to a target decision-maker is not that decision-maker',()=>{const e=env([],{decision_roles:['owner']});assert.equal(e.s.jobPoster_({source:'linkedin_jobs',contact:'Alice Example — Assistant to the owner https://www.linkedin.com/in/alice-example'}),'');});
 
 test('provider keys are redacted and untrusted log text stays literal',()=>{const e=env([],assisted);e.props.APIFY_TOKEN='synthetic-sensitive-value';e.rawLog({type:'error',source:'fixture',note:'=synthetic-sensitive-value'});const cells=e.sheets.Log.getDataRange().getValues().flat().map(String);assert.ok(!cells.some(v=>v.includes('synthetic-sensitive-value')));assert.ok(cells.some(v=>v.startsWith("'=\u005bredacted\u005d")));});
+coldContracts({test,env,plain,answers});
 console.log(`\n${passed} passed; ${failed} failed. Offline only; no provider accounts used.`);
 if(failed)process.exitCode=1;

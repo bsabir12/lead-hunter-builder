@@ -25,3 +25,16 @@ A changed schema should fail the pilot, not silently produce `undefined` IDs. If
 Look up current official provider and platform documentation when configuring a real installation. Relevant entry points: [Apps Script](https://developers.google.com/apps-script), [Apify](https://docs.apify.com/), [TypeSafe](https://docs.typesafe.ai/), [Tavily](https://docs.tavily.com/), [Groq](https://console.groq.com/docs/overview), [Gemini](https://ai.google.dev/gemini-api/docs). Use the user's own subscribed plans; don't rely on the original author's accounts or test quotas.
 
 No scraping of private accounts or bypass of access controls. The skill gathers public or owner-authorized business evidence; it does not authorize bulk messaging or extraction of private personal data.
+
+
+## Company directory adapter
+
+`company_directory` uses `compass/crawler-google-places` in cold/mixed builds. Match the actor's [official input schema](https://apify.com/compass/crawler-google-places/input-schema), [output example](https://apify.com/compass/crawler-google-places) and [rate card](https://apify.com/compass/crawler-google-places/pricing). Input must contain one search term, location and a limit of 1–50 places; this is a per-term limit. Use for local businesses where a listing is useful account evidence, not every B2B market.
+
+```json
+{"searchStringsArray":["dental clinic"],"locationQuery":"Manchester, United Kingdom","maxCrawledPlacesPerSearch":10,"language":"en","scrapePlaceDetailPage":false,"scrapeContacts":false,"maximumLeadsEnrichmentRecords":0,"verifyLeadsEnrichmentEmails":false,"maxReviews":0,"maxImages":0,"enableCompetitorAnalysis":false}
+```
+
+The parser preserves `placeId`, `title`, `website`, `categoryName`, `address`, `countryCode` and the listing `url`; it skips closed businesses and rejects malformed records. A missing own website stays missing. `scrapedAt` is not a job/timing date. Listing facts and a labelled fit hypothesis go into Prospect evidence. Sources are initially disabled. Review a bounded pilot before enabling a recurring directory source.
+
+On 28 September 2026 the Free base rate was $0.004/place plus $0.00005/run: roughly $0.04005 for ten places, before any changed rates/options. Confirm the actual accepted actor cap in the owner's account; a price estimate is not permission to increase the cap. Paid contact extras are explicitly disabled and unsupported input fields fail validation. Other directory actors need their own adapters and fixtures.

@@ -1,0 +1,116 @@
+{
+  "business": {
+    "name": "Example Clinic Operations",
+    "offer": "Workflow setup and reporting for independent clinics.",
+    "buyer": "Clinic owners and operations managers.",
+    "first_offer": "Explore whether one administrative workflow could be improved.",
+    "services": [
+      "Workflow mapping",
+      "Automation implementation",
+      "Operational reporting"
+    ],
+    "portfolio": []
+  },
+  "goal": "clients",
+  "mode": "manual",
+  "fit": [
+    {
+      "key": "fit_sector",
+      "label": "Target sector",
+      "evidence": "Observed company evidence describes an independent clinic. A buying request is not required.",
+      "weight": 0.5
+    },
+    {
+      "key": "fit_scale",
+      "label": "Operational fit",
+      "evidence": "Observed company evidence describes multiple staff or locations whose operations our service could support. Do not infer pain or purchasing intent.",
+      "weight": 0.5
+    }
+  ],
+  "readiness": [
+    {
+      "key": "ready_scope",
+      "label": "Workable scope",
+      "evidence": "The source describes a concrete process, deliverable or outcome to improve.",
+      "weight": 0.4
+    },
+    {
+      "key": "ready_timing",
+      "label": "Timing stated",
+      "evidence": "The buyer states a start date, deadline or current problem needing attention.",
+      "weight": 0.3
+    },
+    {
+      "key": "ready_budget",
+      "label": "Budget supported",
+      "evidence": "The original request states a budget or willingness to pay for the work.",
+      "weight": 0.3
+    }
+  ],
+  "priority": {
+    "match_weight": 0.45,
+    "readiness_weight": 0.3,
+    "freshness_weight": 0.25,
+    "half_life_days": 7
+  },
+  "rules": {
+    "countries": [],
+    "restricted_words": [],
+    "spam_words": [],
+    "max_employees": 0,
+    "min_hourly_usd": 0,
+    "min_fixed_usd": 0,
+    "max_post_age_days": 0
+  },
+  "decision_roles": [
+    "owner",
+    "operations director",
+    "operations manager"
+  ],
+  "budget": {
+    "monthly_usd": 0,
+    "people_monthly_usd": 0
+  },
+  "schedule": {
+    "days": [],
+    "hour": 9,
+    "timezone": "Etc/UTC"
+  },
+  "providers": {
+    "jev_model": "jev-1.13.0",
+    "jev_input_usd_per_million": 0.042,
+    "google_usd_per_page": 0.0045,
+    "google_usd_per_start": 0.001,
+    "actor_minimum_caps": {
+      "apify/google-search-scraper": 0.5
+    },
+    "groq_models": [],
+    "gemini_model": "",
+    "tavily_monthly_credits": 0,
+    "apify_monthly_credit": 0
+  },
+  "sources": [],
+  "prospecting": {
+    "approach": "cold",
+    "suitability": "Public clinic listings identify potential accounts; their need is unknown until a conversation.",
+    "limitations": [
+      "Public listings may not identify the owner",
+      "Valid work email does not prove current role or interest",
+      "Company-domain deduplication in CSV treats branches as one account; Maps uses place IDs"
+    ],
+    "cold_min_fit": 65,
+    "cold_priority": {
+      "fit_weight": 0.7,
+      "contact_weight": 0.2,
+      "timing_weight": 0.1,
+      "half_life_days": 30
+    },
+    "contacts": {
+      "provider": "none",
+      "monthly_credits": 0,
+      "max_rows_per_run": 5,
+      "cache_days": 30,
+      "verification_days": 30
+    }
+  }
+}

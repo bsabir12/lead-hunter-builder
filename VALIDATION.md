@@ -1,28 +1,33 @@
-# Validation — 1.0.0
+# Validation — 1.1.0
 
-The public builder was checked offline on 28 September 2026. It is a configurable starter, not a claim that every provider or target business has been live-tested.
+Checked on 28 September 2026. This is a configurable starter with tested local contracts; native Google Sheets behavior and real contact accuracy still require each installer’s pilot.
 
 | Check | Result |
 | --- | --- |
-| Generator/profile contracts | 25 passed |
-| Generated Apps Script contracts | 61 passed |
-| Three distinct business configurations | Generator, syntax and all 61 engine contracts passed for each |
-| Fresh 26-column sheet mock → full Setup → repeat Setup | Passed; correct headers, offer tab, retained notes/sent status, retained source checkbox and no schedule |
-| Skill frontmatter, interface metadata and reference paths | Passed |
-| Public file allowlist, sensitive-pattern scan, archive byte parity and checksum | Passed during packaging |
+| Profile/generator contracts | 34 passed |
+| Generated Apps Script contracts | 115 passed |
+| Cold and demand profile generation | Passed |
+| External Hunter dummy API | All three endpoint schema checks passed; six dummy requests across research and reproducible checks; no real account credits |
+| Public package | Explicit 19-file allowlist, sensitive-pattern scan, archive byte parity and SHA-256 |
 
-Eighteen regression checks initially failed: seventeen engine cases and one signed-URL profile case. They passed after fixes. Cases cover fresh-sheet sizing, unsupported buying approaches, wrong-site evidence, formula-like values, malformed probabilities, functional URL identity, missing source evidence, effective provider-cap reservations, HR buyer contacts, manual progress and signed URLs. Follow-up composition checks also cover invalid editable caps, review-state lookup suppression, manual contact queues, anonymous identity clues, assistant titles and credential redaction in Log. Other contracts exercise queue storage/recovery, sorts, human edits, selected-cell dependencies, budget pauses and profile validation.
+The 149 offline contracts cover business configuration, source parsing, queues and spending reservations, sorting and human edits, selected-cell dependencies, unknown cold intent, identity/domain agreement, exact-mailbox verification, verification expiry, suppression, caching, request interruption and publication. The engine runner rejects unstubbed networking. Provider calls in these contracts use fictional fixtures.
 
-The engine runner uses isolated fixtures and stubs, rejecting unstubbed networking. It arranges its own budget and provider state so a user's real configuration cannot spend or connect accounts during the tests. Configuration-specific offer/criteria binding and JavaScript parsing are checked; these tests do not validate current actor availability, real provider responses or Google's authorization/runtime behavior.
+Review reproduced and repaired gaps at workflow boundaries: stale discovery snapshots poisoning a cache; verification attached to a changed mailbox; suppression arriving between finder and verifier; copied contact revocation; rescore losing an available email route; and branch cache copying publication ownership. The last branch case was observed failing before its fix. Tests include owner replacement and sent-history preservation. These checks do not prove the absence of all race conditions in Sheets.
 
 ## Skill behavior
 
-Three hypothetical prompts were run with the skill and with a general-assistant baseline: local clinic bookkeeping at zero budget; industrial pumps with a long sales cycle and a factory CSV; freelance web development with existing sent statuses and only a proposed small pilot.
+Three hypothetical businesses were evaluated against the previous skill and updated skill: clinic bookkeeping without posted demand; industrial equipment with a long buying cycle; and a consumer audience for which public B2B prospecting is a poor fit. Two updated business profiles generated successfully and each passed the then-current 34 generator and 108 engine contracts, plus 17 targeted role/offer checks. Final code adds seven handler regressions to the engine suite.
 
-Both sets respected the principal scope/evidence constraints. With the skill, the assistant additionally generated three validated provisional starter projects and used the bundled import contract to identify the existing-sheet migration risk. The baseline produced useful proposed sheet structures. This small author-reviewed evaluation supports cross-business use and preservation of scope; it does not establish higher conversion rates, cost savings or superiority on unseen tasks.
+The updated workflow explicitly assesses suitability, separates facts from hypotheses, keeps cold readiness Unknown and guides professional-contact research. The previous version provided useful manual imports but lacked the cold/contact implementation. Both recognized the unsuitable consumer case. This small author-reviewed evaluation supports the design change; it does not establish superior conversion, coverage or cost per contact.
 
-## Before real recurring use
+## What remains unverified
 
-Each installer must perform the native no-spend checks, verify their source schemas/model pricing and review a small owner-approved live pilot. No paid or quota-consuming provider call, real prospect import, outreach or schedule installation was performed for this package. GitHub's hosted [Offline checks run #1](https://github.com/bsabir12/lead-hunter-builder/actions/runs/36411382858) passed on the published commit, running the 25 builder checks, generation, 61 engine checks and archive/privacy verification on Ubuntu.
+No owner email-finding account was available. No real-person enrichment, paid source run, outreach, account creation or recurring schedule was performed. Hunter’s documented dummy key returns fixed examples: it proves transport/schema compatibility, not current-employment accuracy, mailbox delivery or market coverage.
 
-No original spreadsheet/account IDs, private portfolio links, customer fixtures, API keys or OAuth files are bundled. Known credential patterns and private-link/path patterns were scanned, with an explicit file allowlist. Pattern scanning cannot prove the absence of every possible secret; public files were also inspected for the original app's account references and business-specific exceptions.
+Run `testEngineeringHardening` and `testColdProspectingNative` in an owner-controlled test spreadsheet before live use. Native cold-priority formula evaluation has not been executed for this release. Then review a small approved real sample with the owner’s own account, measuring correct current decision-makers, usable work emails and actual credits per usable contact. Keep schedules disabled until that review.
+
+## Distribution and privacy
+
+The archive contains only allowlisted skill code, fictional profiles, documentation and tests. Original spreadsheet/account IDs, customer fixtures, private portfolio links, API keys and OAuth files are excluded. Known credential/private-link patterns and archive parity are checked; pattern scanning is not proof that every possible secret could be detected. The public source was also reviewed for original-account references.
+
+The original live Lead Hunter script is outside this package and was not modified. [GitHub Actions](https://github.com/bsabir12/lead-hunter-builder/actions) runs the offline generator, engine and archive checks for every published commit. Native/live pilots remain separate from CI.

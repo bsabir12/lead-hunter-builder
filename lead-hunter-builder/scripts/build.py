@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parents[1]
-ADAPTERS = {"linkedin_jobs", "google_jobs", "google_intent", "upwork", "upwork_needs", "x"}
+ADAPTERS = {"linkedin_jobs", "google_jobs", "google_intent", "upwork", "upwork_needs", "x", "company_directory"}
 DAYS = {"MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"}
 SECRET_KEY = re.compile(r"^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|authorization|credentials?|client[_-]?secret|x-amz-(?:credential|signature|security-token)|x-goog-(?:credential|signature)|sig|signature)$", re.I)
 SECRET_VALUE = re.compile(r"(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|apify_api_[A-Za-z0-9]{12,}|AIza[A-Za-z0-9_-]{30,}|sk-(?:proj-)?[A-Za-z0-9_-]{20,}|gsk_[A-Za-z0-9]{20,}|tvly-[A-Za-z0-9_-]{20,}))")
@@ -63,7 +63,32 @@ def no_secrets(value, path="profile"):
 
 def validate(p):
     no_secrets(p)
-    obj(p, ["business", "goal", "mode", "fit", "readiness", "priority", "rules", "decision_roles", "budget", "schedule", "providers", "sources"], "profile")
+    required = ["business", "goal", "mode", "fit", "readiness", "priority", "rules", "decision_roles", "budget", "schedule", "providers", "sources"]
+    obj(p, required + (["prospecting"] if "prospecting" in p else []), "profile")
+    if "prospecting" in p:
+        pc = p["prospecting"]
+        obj(pc, ["approach", "suitability", "limitations", "cold_min_fit", "cold_priority", "contacts"], "prospecting")
+        if pc["approach"] not in ["demand", "cold", "mixed"]:
+            fail("Use demand, cold or mixed prospecting")
+        text(pc["suitability"], "prospecting.suitability")
+        strings(pc["limitations"], "prospecting.limitations")
+        number(pc["cold_min_fit"], "prospecting.cold_min_fit")
+        if pc["cold_min_fit"] > 100:
+            fail("cold_min_fit cannot exceed 100")
+        cp = pc["cold_priority"]
+        obj(cp, ["fit_weight", "contact_weight", "timing_weight", "half_life_days"], "cold_priority")
+        for k, v in cp.items():
+            number(v, "cold_priority." + k, positive=k == "half_life_days")
+        if abs(sum(cp[k] for k in ["fit_weight", "contact_weight", "timing_weight"]) - 1) > 1e-9:
+            fail("Cold priority weights must sum to one")
+        ec = pc["contacts"]
+        obj(ec, ["provider", "monthly_credits", "max_rows_per_run", "cache_days", "verification_days"], "contacts")
+        if ec["provider"] not in ["none", "hunter"]:
+            fail("Supported contact providers: none, hunter")
+        number(ec["monthly_credits"], "contacts.monthly_credits")
+        for k, limit in [("max_rows_per_run", 5), ("cache_days", 90), ("verification_days", 30)]:
+            if type(ec[k]) is not int or not 1 <= ec[k] <= limit:
+                fail(f"contacts.{k}: expected an integer 1–{limit}")
     obj(p["business"], ["name", "offer", "buyer", "first_offer", "services", "portfolio"], "business")
     for k in ["name", "offer", "buyer", "first_offer"]:
         text(p["business"][k], f"business.{k}")
@@ -146,6 +171,17 @@ def validate(p):
         if not isinstance(source["input"], dict):
             fail("Source input must be an object matching the actor's documented schema")
         text(source["note"], "source.note")
+        if source["name"] == "company_directory":
+            inp = source["input"]
+            allowed = {"searchStringsArray", "locationQuery", "maxCrawledPlacesPerSearch", "language", "scrapePlaceDetailPage", "scrapeContacts", "maximumLeadsEnrichmentRecords", "verifyLeadsEnrichmentEmails", "maxReviews", "maxImages", "enableCompetitorAnalysis"}
+            if (p.get("prospecting", {}).get("approach", "demand") == "demand" or source["actor"] != "compass/crawler-google-places"
+                or set(inp) - allowed or not isinstance(inp.get("searchStringsArray"), list) or len(inp["searchStringsArray"]) != 1
+                or not isinstance(inp["searchStringsArray"][0], str) or not inp["searchStringsArray"][0].strip()
+                or not isinstance(inp.get("locationQuery"), str) or not inp["locationQuery"].strip()
+                or type(inp.get("maxCrawledPlacesPerSearch")) is not int or not 1 <= inp["maxCrawledPlacesPerSearch"] <= 50
+                or any(inp.get(k) is not False for k in ["scrapePlaceDetailPage", "scrapeContacts", "verifyLeadsEnrichmentEmails", "enableCompetitorAnalysis"])
+                or any(type(inp.get(k)) is not int or inp[k] != 0 for k in ["maximumLeadsEnrichmentRecords", "maxReviews", "maxImages"])):
+                fail("Company directory needs cold/mixed mode and bounded Maps input with paid extras disabled")
     return p
 
 
@@ -155,7 +191,7 @@ def render(p):
     if engine.count("__BUSINESS_CONFIG__") != 1:
         fail("Engine configuration marker is missing or ambiguous")
     config = json.dumps(p, ensure_ascii=True, allow_nan=False).replace("<", "\\u003c").replace(">", "\\u003e")
-    return engine.replace("__BUSINESS_CONFIG__", config)
+    return engine.replace("__BUSINESS_CONFIG__", config) + "\n" + (ROOT / "assets/prospecting.gs").read_text()
 
 
 def build(p, out):
@@ -170,8 +206,17 @@ def build(p, out):
     csv_text = io.StringIO()
     csv.writer(csv_text, lineterminator="\n").writerow(["company", "what_they_want", "link", "website", "contact", "posted", "notes"])
     (out / "import-template.csv").write_text(csv_text.getvalue())
+    (out / "prospect-import-template.csv").write_text("company,website,facts,facts_url,hypothesis,industry,country,employees,timing_signal,timing_date,timing_url\n")
     (out / ".gitignore").write_text("business-profile.json\n.env*\n.clasp.json\n.clasprc.json\ncredentials*\n*.csv\n!import-template.csv\n")
-    (out / "OWNER-GUIDE.md").write_text(f"""# {p['business']['name']} — Lead Hunter\n\nMode: {p['mode']}. Sources are initially disabled. No schedules or accounts are connected by this build.\n\n1. Use a new blank Google Sheet, or a verified copy of a compatible workbook.\n2. Open Extensions → Apps Script. Paste Code.gs and save. Set the project timezone to {p['schedule']['timezone']}.\n3. Run setup from the editor; review Google's requested access for your own project. Reload the sheet.\n4. Use Lead Hunter → Settings → Maintenance → Import leads from CSV to import your own researched leads. Use import-template.csv's header.\n5. In manual mode enter fit and readiness from the agreed criteria. Priority recalculates; unknown dates earn no freshness bonus.\n6. For assisted mode, first verify models, actor schemas and pricing. Enter keys directly in your own project, never in chat or source files. Enable only the pilot source you reviewed.\n7. Use Check system status and Log. Run testEngineeringHardening in Apps Script for no-spend native checks before an approved small pilot.\n8. Install the planned schedule only after reviewing the pilot and approving recurring costs. Edit timers via Settings → Schedule. Stop recurring searches via Maintenance → Stop scheduled searches.\n\nRecorded monthly Apify/Jev limit: ${p['budget']['monthly_usd']:g}; people-search sublimit: ${p['budget']['people_monthly_usd']:g}. These do not guarantee your external provider bill. Optional providers have their own plans and quotas. Zero disables paid work within the corresponding budget.\n\nProgress in Leads distinguishes working, waiting, paused and completed. Selected-cell fill updates the selected supported fields and previewed dependencies, including skipped leads; it does not authorize outreach. Unsupported or unverified data stays blank with an explanation.\n\nSee the installed skill's setup-and-testing reference for validation and recovery steps. This generated project has not been live-tested merely because generation succeeded. No emails or messages are sent by discovery.\n""")
+    pc = p.get("prospecting", {})
+    cold_mode = pc.get("approach", "demand") in ["cold", "mixed"]
+    import_instruction = ("Use Lead Hunter → Settings → Maintenance → Import cold prospects from CSV with prospect-import-template.csv. Facts and hypotheses stay separate. In mixed mode, use the regular CSV only for actual buying requests." if cold_mode else "Use Lead Hunter → Settings → Maintenance → Import leads from CSV with import-template.csv.")
+    scoring_instruction = ("Enter fit against your agreed criteria; cold readiness stays Unknown. Cold priority uses fit, confirmed contactability and supported timing, never collection dates." if cold_mode else "Enter fit and readiness from the agreed criteria. Priority recalculates; unknown dates earn no freshness bonus.")
+    contact_guide = ""
+    if cold_mode or pc.get("contacts", {}).get("provider", "none") != "none":
+        ec = pc["contacts"]
+        contact_guide = f"""\n## Cold prospects and work contacts\n\nApproach: {pc['approach']}. Assessment: {pc['suitability']}\n\nLimitations: {'; '.join(pc['limitations']) or 'Review source and contact coverage in your own market.'}\n\nLeads holds daily work; Prospect evidence preserves facts, hypotheses and timing; Contacts preserves candidate identity, exact LinkedIn profile, source URLs and mailbox verification. For automated contact research, choose Hunter and assisted mode in the profile, rebuild, enter HUNTER_KEY through Settings → Connections, and approve a credit cap. No provider is connected by generating these files.\n\nContact credit ceiling: {ec['monthly_credits']:g} Hunter credits/month, separately from the Apify/Jev dollar budget. Zero disables Hunter. Adjust this in the profile and rebuild; never edit the spending ledger to increase a limit. Up to {ec['max_rows_per_run']} selected rows per click; a domain search can return five candidates per company. A five-contact pilot means selecting no more than five PERSON rows for verification, not five companies with every returned employee.\n\n1. Qualify companies, then use Update lead details → Find work contacts for selected leads. Or find someone on a public company/team page and use Add a known decision-maker.\n2. In Contacts, check current company/role against the cited source and profile. Set identity_status to confirmed only when supported.\n3. Select the relevant person rows and run Find / verify selected work emails. Unknown/catch-all mailboxes stay unavailable.\n4. Copy verified contacts to Leads fills empty contact fields for new leads; existing contacts and sent rows are preserved. No email is sent.\n5. Before outreach, recheck that the person, verification date and do_not_contact state still allow contact. Buying intent remains Unknown until evidence arrives.\n\nDo not set verification fields manually to make a result appear valid. Name/company/role edits reset identity review; email edits reset verification. Keep private addresses and sensitive consumer targeting out of this B2B workflow.\n"""
+    (out / "OWNER-GUIDE.md").write_text(f"""# {p['business']['name']} — Lead Hunter\n\nMode: {p['mode']}. Sources are initially disabled. No schedules or accounts are connected by this build.\n\n1. Use a new blank Google Sheet, or a verified copy of a compatible workbook.\n2. Open Extensions → Apps Script. Paste Code.gs and save. Set the project timezone to {p['schedule']['timezone']}.\n3. Run setup from the editor; review Google's requested access for your own project. Reload the sheet.\n4. {import_instruction}\n5. In manual mode: {scoring_instruction}\n6. For assisted mode, first verify models, actor schemas and pricing. Enter keys directly in your own project, never in chat or source files. Enable only the pilot source you reviewed.\n7. Use Check system status and Log. Run testEngineeringHardening in Apps Script (and testColdProspectingNative for cold/mixed builds) for no-spend native checks before an approved small pilot.\n8. Install the planned schedule only after reviewing the pilot and approving recurring costs. Edit timers via Settings → Schedule. Stop recurring searches via Maintenance → Stop scheduled searches.\n\nRecorded monthly Apify/Jev limit: ${p['budget']['monthly_usd']:g}; people-search sublimit: ${p['budget']['people_monthly_usd']:g}. These do not guarantee your external provider bill. Optional providers have their own plans and quotas. Zero disables paid work within the corresponding budget.\n\nProgress in Leads distinguishes working, waiting, paused and completed. Selected-cell fill updates the selected supported fields and previewed dependencies, including skipped leads; it does not authorize outreach. Unsupported or unverified data stays blank with an explanation.\n\nSee the installed skill's setup-and-testing reference for validation and recovery steps. This generated project has not been live-tested merely because generation succeeded. No emails or messages are sent by discovery.\n{contact_guide}""")
     return out
 
 

@@ -2,7 +2,7 @@
 
 Start with: “What do you sell or do? Who would you like as a customer? What would tell us they might need you now?” A website can answer part of this. Don't require a polished ICP or perfect offer. Research relevant public pages only if access is available; label claims as owner-supplied or publicly supported.
 
-Next gather only what changes the build:
+Before choosing sources, assess demand/cold/mixed/limited suitability using cold-prospecting.md. Next gather only what changes the build:
 
 | Decision | Why it matters | If unknown |
 | --- | --- | --- |
@@ -32,6 +32,8 @@ The full example is `assets/profile.example.json`; the generator validates and r
 - `budget`: `monthly_usd` includes the starter's recorded Apify/Jev charges; `people_monthly_usd` is an additional sublimit, not extra permission outside the total.
 - `schedule`: desired `days` (uppercase weekday names), `hour` (0–23), IANA `timezone`. The generator records the plan but never installs a trigger.
 - `providers`: explicit Jev model and input-token price, Google page/start estimate and any actor minimum cap, optional Groq models/Gemini model, Tavily monthly credits cap, Apify monthly credit for informational display. Values are assumptions to verify against the owner's current plans, not a promise of free usage. The example keeps optional fallback models empty.
-- `sources`: zero or more supported source definitions: `name`, `actor`, `max_usd`, `input`, `note`. The starter always installs them disabled. Supported adapter names: `linkedin_jobs`, `google_jobs`, `google_intent`, `upwork`, `upwork_needs`, `x`. Each has a specific output contract. Don't rename actors into these names unless the payload matches or you adapt the parser.
+- `sources`: zero or more supported source definitions: `name`, `actor`, `max_usd`, `input`, `note`. The starter always installs them disabled. Supported adapter names: `linkedin_jobs`, `google_jobs`, `google_intent`, `upwork`, `upwork_needs`, `x`, `company_directory`. Each has a specific output contract. Don't rename actors into these names unless the payload matches or you adapt the parser.
 
 Keep the finished profile private if it contains competitive strategy or customer data. A public template should contain fictional examples only. Credentials never belong in this file.
+
+The optional `prospecting` block selects demand/cold/mixed, records suitability and limitations, and configures cold ranking and separate contact credits. See [cold-prospecting.md](cold-prospecting.md) and `assets/profile.cold.example.json`. Omit it only for legacy demand builds. Monetary Apify/Jev caps and Hunter credits are distinct; ask for both if both are enabled.

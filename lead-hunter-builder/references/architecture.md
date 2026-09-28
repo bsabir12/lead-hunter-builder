@@ -32,3 +32,10 @@ Priority uses configured weights and a half-life. Only nonfuture supported oppor
 Keep adapters, business criteria and provider billing assumptions explicit. The starter only implements its named source parsers; other sources need code and tests. Goal-specific proposal competition, CRM integration, reply sync, message generation and visual ad analysis are extensions, not already implemented features. They can be useful later when real outreach data justifies them.
 
 Do not copy a person-specific parent-company exception into a public build. If a future lead belongs to a parent business, obtain and retain evidence of the relationship, then evaluate the person against that evidence without bypassing the acceptance threshold.
+
+
+## Cold account/contact module
+
+`assets/prospecting.gs` is appended by the generator. It adds the cold/mixed route without changing the 29-column Leads schema; existing demand profiles remain valid. Additional structured tabs are created only for configured cold/contact use. `Prospect evidence` links by lead ID, and `Contacts` by lead ID plus contact ID. Mailbox validity, current-employment confirmation and buying readiness stay separate. Cold readiness is Unknown, even when fit and a verified contact are available.
+
+Hunter requests reserve conservative credits durably under the script lock before network calls; a short persistent request lease stops overlapping duplicate requests and uncertain retries. Failed calls retain their reservation. Sorting and edits are checked by contact ID/snapshot before contact writes. Real-person/provider coverage is not established by the offline tests or dummy API. Current-domain work mailboxes only; no message sending or inbox access.

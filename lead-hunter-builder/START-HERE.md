@@ -1,6 +1,6 @@
 # Lead Hunter Builder
 
-Build a lead hunting Google Sheet around your own business, offer and customers. The skill guides a short interview, proposes sources and scoring, creates the Apps Script files, and helps you set up and test the sheet. You don't need to know how to code.
+Build a lead hunting Google Sheet around your own business, offer and customers. The skill first assesses whether posted requests, cold company prospecting or a mixed approach suits your business. It explains the gaps, guides a short interview, creates the Apps Script files, and helps you set up and test the sheet. You don't need to know how to code.
 
 Your Google Sheet, provider accounts, keys and bills belong to you. No shared accounts or keys are included. You can start with manual imports and no paid tools. Installing the skill alone does not create a sheet or start automation.
 
@@ -22,7 +22,8 @@ You can also share your business website. The assistant should ask a few relevan
 
 - One Leads workspace with match, readiness, priority and visible progress.
 - Your services and offer, source links and original evidence.
-- Manual imports, optional automated discovery and verified contact research.
+- Manual imports, optional company/opportunity discovery and work-email finding/verification using your own Hunter account.
+- Cold prospects keep buying readiness Unknown; contact identity and mailbox checks remain separate.
 - Editable budgets and optional Apps Script schedules.
 - Selected-cell filling that includes required inputs and preserves unrelated fields.
 

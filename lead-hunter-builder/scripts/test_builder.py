@@ -120,6 +120,66 @@ class BuilderTests(unittest.TestCase):
                 build(self.p, out)
             self.assertEqual(before, (out / "Code.gs").read_bytes())
 
+    def cold(self):
+        self.p = json.loads((ROOT / "assets/profile.cold.example.json").read_text())
+        return self.p["prospecting"]
+
+    def test_cold_profile_keeps_own_accounts_off(self):
+        c = self.cold()
+        validate(self.p)
+        self.assertEqual(c["contacts"]["provider"], "none")
+        self.assertEqual(c["contacts"]["monthly_credits"], 0)
+        self.assertIn("function finderResult_", render(self.p))
+
+    def test_cold_priority_weights(self):
+        self.cold()["cold_priority"]["fit_weight"] = .9
+        with self.assertRaisesRegex(ValueError, "sum to one"):
+            validate(self.p)
+
+    def test_contact_budget_zero_and_negative(self):
+        self.cold()["contacts"]["monthly_credits"] = -1
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_contact_attempt_batch_bounded(self):
+        self.cold()["contacts"]["max_rows_per_run"] = 100
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_contact_verification_staleness_bounded(self):
+        self.cold()["contacts"]["verification_days"] = 365
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_unimplemented_contact_provider_rejected(self):
+        self.cold()["contacts"]["provider"] = "apollo"
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_cold_no_secret_api_key(self):
+        self.cold()["contacts"]["api_key"] = "fictional"
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_maps_bounded_and_extra_enrichment_rejected(self):
+        self.cold()
+        inp = {"searchStringsArray": ["clinic"], "locationQuery": "Example city", "maxCrawledPlacesPerSearch": 10,
+               "scrapePlaceDetailPage": False, "scrapeContacts": False, "maximumLeadsEnrichmentRecords": 0,
+               "verifyLeadsEnrichmentEmails": False, "maxReviews": 0, "maxImages": 0, "enableCompetitorAnalysis": False}
+        self.p["sources"] = [{"name": "company_directory", "actor": "compass/crawler-google-places", "input": inp, "max_usd": .05, "note": "Fictional disabled pilot"}]
+        validate(self.p)
+        inp["scrapeContacts"] = True
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_cold_generator_outputs_separate_facts_import(self):
+        self.cold()
+        with tempfile.TemporaryDirectory(prefix="lh-cold-test-") as tmp:
+            out = Path(tmp) / "build"
+            build(self.p, out)
+            self.assertIn("facts,facts_url,hypothesis", (out / "prospect-import-template.csv").read_text())
+            self.assertNotIn("posted", (out / "prospect-import-template.csv").read_text())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

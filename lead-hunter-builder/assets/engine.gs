@@ -78,7 +78,11 @@ function onOpen() {
     .addSubMenu(ui.createMenu('Update lead details')
       .addItem('Fill selected cells…', 'fillSelectedCells')
       .addItem('Fill missing details — all leads…', 'fillMissing')
-      .addItem('Refresh decision-makers for selected leads…', 'redoPeopleSelected'))
+      .addItem('Refresh decision-makers for selected leads…', 'redoPeopleSelected')
+      .addItem('Find work contacts for selected leads…', 'findWorkContactsSelected')
+      .addItem('Add a known decision-maker…', 'addKnownWorkContact')
+      .addItem('Find / verify selected work emails…', 'verifyWorkContactsSelected')
+      .addItem('Copy verified contacts to Leads', 'publishVerifiedContacts'))
     .addItem('Check system status', 'checkReadiness')
     .addSeparator()
     .addSubMenu(ui.createMenu('Settings')
@@ -91,7 +95,8 @@ function onOpen() {
         .addItem('Groq API key', 'setGroqKey')
         .addItem('Gemini API key', 'setGeminiKey')
         .addItem('Tavily API key', 'setTavilyKey')
-        .addItem('Serper API key (optional)', 'setSerperKey'))
+        .addItem('Serper API key (optional)', 'setSerperKey')
+        .addItem('Hunter API key (optional)', 'setHunterKey'))
       .addSubMenu(ui.createMenu('Maintenance')
         .addItem('Refresh sheet layout', 'setup')
         .addItem('Collect completed searches', 'collectRuns')
@@ -102,9 +107,11 @@ function onOpen() {
         .addItem('Stop scheduled searches', 'removeSchedule')
         .addItem('Reset sources to defaults', 'resetSources')
         .addItem('Reset rules to defaults', 'resetRules')
-        .addItem('Import leads from CSV…', 'importLeadsCsv')))
+        .addItem('Import leads from CSV…', 'importLeadsCsv')
+        .addItem('Import cold prospects from CSV…', 'importProspectsCsv')))
     .addToUi();
   refreshProgress_();
+  reconcilePublishedContacts_();
 }
 
 
@@ -323,6 +330,7 @@ function setup() {
   plainHeader_(rules);
 
   openServicesOffer();
+  if(prospectConfig_().approach!=='demand'||prospectConfig_().contacts.provider!=='none')contactSheets_();
   logTab_();
   const prop = sheet_(TABS.proposals, ['date', 'id', 'type', 'proposal', 'evidence', 'rung', 'est_cost_usd',
     'decision', 'applied_on', 'result']);
@@ -526,7 +534,9 @@ function writePriorityFormulas_(sh, fromRow, n) {
   if(count<1)return;
   const at=LEAD_COLS.indexOf('priority_pct');
   const ref=c=>`RC[${LEAD_COLS.indexOf(c)-at}]`;
-  const formula=`=IF(${ref('id')}="","",IF(AND(ISNUMBER(${ref('match_pct')}),ISNUMBER(${ref('readiness_pct')})),${priorityParts_(ref).score},IF(${ref('next_step')}="${STEP.skip}",0,"Not scored")))`;
+  const demand=`IF(AND(ISNUMBER(${ref('match_pct')}),ISNUMBER(${ref('readiness_pct')})),${priorityParts_(ref).score},IF(${ref('next_step')}="${STEP.skip}",0,"Not scored"))`;
+  const cold=prospectConfig_().approach==='demand'?'"Enable cold mode"':coldPriorityFormula_(ref);
+  const formula=`=IF(${ref('id')}="","",IF(${ref('source')}="cold_prospect",${cold},${demand}))`;
   sh.getRange(fromRow,at+1,count,1).setFormulasR1C1(Array.from({length:count},()=>[formula])).setNumberFormat('0.0');
 }
 
@@ -612,7 +622,7 @@ function progressSnapshot_() {
   const i=c=>LEAD_COLS.indexOf(c), rows=data.slice(1).filter(r=>r[i('id')] && (r[i('status')]||'new')==='new');
   const approved=approvedScoringIds_();
   const approvedIds=approved===null?null:new Set(approved);
-  const unscored=rows.filter(r=>BUSINESS_CONFIG.mode==='manual'?!(typeof r[i('match_pct')]==='number'&&typeof r[i('readiness_pct')]==='number'):!r[i('next_step')] || /^Jev error/.test(String(r[i('why')])) || (approvedIds && approvedIds.has(String(r[i('id')])) && missingLeadScores_(Object.fromEntries(LEAD_COLS.map((c,k)=>[c,r[k]])))));
+  const unscored=rows.filter(r=>BUSINESS_CONFIG.mode==='manual'?!(typeof r[i('match_pct')]==='number'&&(r[i('source')]==='cold_prospect'||typeof r[i('readiness_pct')]==='number')):!r[i('next_step')] || /^Jev error/.test(String(r[i('why')])) || (approvedIds && approvedIds.has(String(r[i('id')])) && missingLeadScores_(Object.fromEntries(LEAD_COLS.map((c,k)=>[c,r[k]])))));
   const scoring=approvedIds?unscored.filter(r=>approvedIds.has(String(r[i('id')]))).length:Math.min(approvedLeft_(),unscored.length);
   const jobs=pending_(), lookups=lookupRowsWaiting_(data).length, people=peopleQueue_(data).length;
   const month=Utilities.formatDate(new Date(),Session.getScriptTimeZone(),'yyyy-MM');
@@ -847,7 +857,7 @@ function budgetAllows_(estimate, options) {
 
 
 function runNowManual() {
-  if(BUSINESS_CONFIG.mode==='manual')return importLeadsCsv();
+  if(BUSINESS_CONFIG.mode==='manual')return prospectConfig_().approach==='cold'?importProspectsCsv():importLeadsCsv();
   const e = estimates_();
   const ok = confirm_('Approve this manual run?', [
     ...e.lines.map(l => `• ${l.source}: ~$${l.est.toFixed(2)} (${l.basis}), cap $${l.cap}`),
@@ -1070,6 +1080,7 @@ function appendLeads_(source, items, approvedVia, deadline, runContext) {
     rows.push(row);
   });
   
+  if(rows.some(r=>r._evidence)){const ev=contactSheets_().evidence;rows.filter(r=>r._evidence).forEach(r=>upsertEvidence_(ev,r._evidence));}
   const toScore = rows.filter(r => !r._adStats && !r.next_step).length;
   const out = rows.map(row => LEAD_COLS.map(c => sheetValue_(row[c] === undefined ? '' : row[c])));
   if (toScore && jevKey_()) {
@@ -1097,6 +1108,7 @@ function normalise_(source, items) {
 const NORMALISE_ERRORS = { count: 0 };
 
 function normaliseRaw_(source, items) {
+  if(source==='company_directory')return directoryLeads_(items);
   const cut = (s, n) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
   const arr = v => Array.isArray(v) ? v : [];
   if (source === 'linkedin_jobs') return items.map(i => ({
@@ -1307,6 +1319,7 @@ function jevState_(row) {
   const site = row._site;
   return {
     our_service: OUR_SERVICE,
+    opportunity_type:isCold_(row)?'Cold account prospect. Facts describe a business, not a buying request. Need, budget and willingness are UNKNOWN. Hypotheses are not evidence.':'Expressed-demand source; judge its actual evidence',
     source: row.source || NA,
     post: { title: row.what_they_want || NA, text: row._text ? cleanPostText_(row._text) : NA },
     company: { name: row.company || NA, industry: row.industry || NA, industry_evidence: 'Unverified source/job metadata; may describe the role or client rather than this company', size: f.size, location: row.country || NA },
@@ -1337,7 +1350,9 @@ function genericIndex_(answers,criteria) {
   return Math.round(100*total/weight);
 }
 function jevDerive_(a,row) {
-  const match=genericIndex_(a,BUSINESS_CONFIG.fit),ready=genericIndex_(a,BUSINESS_CONFIG.readiness);
+  const match=genericIndex_(a,BUSINESS_CONFIG.fit);
+  if(isCold_(row))return coldDerive_(a,row,match);
+  const ready=genericIndex_(a,BUSINESS_CONFIG.readiness);
   const poster=a.poster||{}, valid=['buyer','intermediary','seller','unclear'];
   const confidence=poster.confidence;
   if(!valid.includes(poster.choice)||typeof confidence!=='number'||!Number.isFinite(confidence)||confidence<0||confidence>1)throw new Error('Invalid author judgment');
@@ -1457,7 +1472,7 @@ function jevScore_(rows, opts) {
 
 function scoreExistingWithJev() {
   const ui = SpreadsheetApp.getUi();
-  if(BUSINESS_CONFIG.mode==='manual')return ui.alert('Manual assessment','Enter match and readiness from your agreed criteria, then choose the next step. No provider is used.',ui.ButtonSet.OK);
+  if(BUSINESS_CONFIG.mode==='manual')return ui.alert('Manual assessment','Enter fit from your agreed criteria; keep cold readiness Unknown. For demand leads also assess readiness, then choose the next step. No provider is used.',ui.ButtonSet.OK);
   if (!jevKey_()) return ui.alert('No Jev key yet', 'Lead Hunter → Settings → Connections → Jev API key, then try again.', ui.ButtonSet.OK);
   const preview = unscoredRows_();
   if (!preview.length) return ui.alert('Nothing to score', 'Every lead already has a Jev result.', ui.ButtonSet.OK);
@@ -1591,7 +1606,7 @@ function scoreRows_(rowIdx, deadline) {
     const pair = rowIdx.slice(k, k + 2).map(r => {
       const row = {};
       LEAD_COLS.forEach((col, i) => { row[col] = data[r][i]; });
-      const post = String(row.notes || '').startsWith('post: ') ? String(row.notes).slice(6) : '';
+      const post = isCold_(row)?String(row.notes||'').split('\nHypothesis')[0]:String(row.notes || '').startsWith('post: ') ? String(row.notes).slice(6) : '';
       row._text = [row.what_they_want, row.company, row.industry, row.pay, post].join(' ');
       row._r = r; row._partnerMaxEmployees=partnerMax; row._scoreBefore = Object.assign({}, row);
       return row;
@@ -2357,6 +2372,7 @@ function pickPeople_(accepted) {
 }
 
 function lookupRow_(row, deadline, usage, options) {
+  if(isCold_(row)){row.lookup='review: use Find work contacts for selected leads, then verify emails in Contacts';return;}
   const selected=options&&options.cellFill, fields=selected?new Set(options.fields):null;
   const want=c=>!selected||fields.has(c);
   const wantSite=!selected||['website','contact','people'].some(c=>fields.has(c));
@@ -2513,7 +2529,7 @@ function refillRows_(data, today) {
 
 function missingLeadScores_(row) {
   return row.next_step!==STEP.skip && row.source!=='ad_library' &&
-    (typeof row.match_pct!=='number' || typeof row.readiness_pct!=='number' || /^Jev error/.test(String(row.why)));
+    (typeof row.match_pct!=='number' || (!isCold_(row)&&typeof row.readiness_pct!=='number') || /^Jev error/.test(String(row.why)));
 }
 const CELL_FILL_KEY='LEAD_HUNTER_CELL_FILL';
 const CELL_FILL_ERROR_KEY='LEAD_HUNTER_CELL_FILL_ERRORS';
@@ -2546,7 +2562,7 @@ function selectedCellFields_(data,ranges,hidden) {
 function cellFillPlan_(row,requested) {
   const unsupported=requested.filter(c=>!CELL_SUPPORTED.includes(c));
   const fields=new Set(requested.filter(c=>CELL_SUPPORTED.includes(c)));
-  if(fields.has('priority_pct'))['match_pct','readiness_pct'].forEach(c=>{if(typeof row[c]!=='number')fields.add(c);});
+  if(fields.has('priority_pct'))(isCold_(row)?['match_pct']:['match_pct','readiness_pct']).forEach(c=>{if(typeof row[c]!=='number')fields.add(c);});
   if(['next_step','why','missing','what_to_say'].some(c=>fields.has(c))) {
     fields.add('match_pct');fields.add('readiness_pct');
   }
@@ -2664,7 +2680,7 @@ function runCellFill_(deadline) {
       if(!row||cellFillHash_(row)!==task.hash)throw new Error('Lead changed since approval; no cells written. Select again.');
       if(task.tries>=2)throw new Error('Cell fill stopped after two interrupted attempts; select again to retry.');
       task.tries++;saveCellFillQueue_(queue);
-      row._text=[row.what_they_want,row.company,row.industry,row.pay,String(row.notes||'').replace(/^post: /,'')].join(' ');
+      row._text=isCold_(row)?coldEvidenceText_(row):[row.what_they_want,row.company,row.industry,row.pay,String(row.notes||'').replace(/^post: /,'')].join(' ');
       row._partnerMaxEmployees=rules_().partnerMaxEmployees;
       const original=Object.assign({},row);
       if(lookup) {
@@ -2771,7 +2787,7 @@ function lookupBatch_(deadline) {
     if (Date.now() > deadline - 80000) break;
     const row = {};
     LEAD_COLS.forEach((c, k) => { row[c] = data[r][k]; });
-    const post = String(row.notes || '').startsWith('post: ') ? String(row.notes).slice(6) : '';
+    const post = isCold_(row)?String(row.notes||'').split('\nHypothesis')[0]:String(row.notes || '').startsWith('post: ') ? String(row.notes).slice(6) : '';
     row._text = [row.what_they_want, row.company, row.industry, row.pay, post].join(' ');
     row._r = r;
     if(!confirmRow_(sh,row))continue;
@@ -2976,15 +2992,16 @@ function providerFetchAll_(...args) {
 function validProbability_(p){return typeof p==='number'&&Number.isFinite(p)&&p>=0&&p<=1;}
 
 function validateSourceRow_(row) {
-  const [name,,actor,cost,input]=row,allowed=['linkedin_jobs','google_jobs','google_intent','upwork','upwork_needs','x'];
+  const [name,,actor,cost,input]=row,allowed=['linkedin_jobs','google_jobs','google_intent','upwork','upwork_needs','x','company_directory'];
   if(!allowed.includes(name)||!/^[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+$/.test(String(actor||'')))throw new Error('Unsupported source or invalid actor; inspect Sources before running.');
   if(String(cost).trim()===''||!Number.isFinite(Number(cost))||Number(cost)<=0)throw new Error('Enabled source needs a positive finite cap; zero does not enable a paid run.');
   let parsed;try{parsed=JSON.parse(input);}catch(e){throw new Error('Source input must be valid JSON.');}
   if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new Error('Source input must be an object matching the actor schema.');
+  if(name==='company_directory'&&(prospectConfig_().approach==='demand'||actor!=='compass/crawler-google-places'||!directoryInputValid_(parsed)))throw new Error('Company directory needs cold/mixed mode, the supported Maps actor and bounded input with paid extras disabled.');
 }
 
 function redactSecretText_(value) {
   let text=String(value||''),props=PropertiesService.getScriptProperties();
-  ['APIFY_TOKEN','JEV_KEY','GROQ_KEY','GEMINI_KEY','TAVILY_KEY','SERPER_KEY'].forEach(k=>{const secret=props.getProperty(k);if(secret)text=text.split(secret).join('[redacted]');});
+  ['APIFY_TOKEN','JEV_KEY','GROQ_KEY','GEMINI_KEY','TAVILY_KEY','SERPER_KEY','HUNTER_KEY'].forEach(k=>{const secret=props.getProperty(k);if(secret)text=text.split(secret).join('[redacted]');});
   return text.replace(/(Bearer\s+)[^\s"']+/gi,'$1[redacted]').replace(/([?&](?:api[_-]?key|token|access_token|signature|x-amz-signature)=)[^&\s]+/gi,'$1[redacted]');
 }
