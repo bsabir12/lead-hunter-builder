@@ -6,7 +6,7 @@ const TABS = { leads: 'Leads', sources: 'Sources', rules: 'Rules', log: 'Log', p
 const OLD_TABS = [];
 const LEAD_COLS = [
   'company', 'what_they_want', 'source', 'next_step', 'match_pct', 'readiness_pct', 'priority_pct', 'why', 'missing', 'channel',
-  'what_to_say', 'status', 'contact', 'people', 'link', 'website', 'added',
+  'what_to_say', 'status', 'contact', 'email', 'phone', 'people', 'link', 'website', 'added',
   'notes', 'lookup', 'follow_up_due', 'last_touch', 'thread', 'posted', 'pay', 'employees', 'industry', 'country', 'confidence', 'id'];
 const LEAD_HEADER_ROW = 2;
 const LEAD_FIRST_ROW = LEAD_HEADER_ROW + 1;
@@ -15,7 +15,10 @@ function leadData_(sh) {
   const data = sh.getDataRange().getValues().slice(LEAD_HEADER_ROW - 1);
   if (!data.length || LEAD_COLS.some((c,k)=>data[0][k]!==c))
     throw new Error('Leads layout needs updating. Run updateLeadsLayout before processing.');
-  return data;
+  return data.map((r,n)=>n?r.map((v,k)=>leadFieldValue_(LEAD_COLS[k],v)):r);
+}
+function leadFieldValue_(field,value) {
+  return ['company','website','contact','people','email','phone','linkedin'].includes(field) && /^\[Next\] /.test(String(value||'')) ? '' : value;
 }
 function leadSheetRow_(index) { return index + LEAD_HEADER_ROW; }
 const AI_COLS = ['next_step', 'match_pct', 'readiness_pct', 'why', 'missing', 'channel', 'what_to_say', 'lookup', 'confidence'];
@@ -77,12 +80,22 @@ function onOpen() {
     .addItem('Score new leads…', 'scoreExistingWithJev')
     .addSubMenu(ui.createMenu('Update lead details')
       .addItem('Fill selected cells…', 'fillSelectedCells')
+      .addItem('Find public phones — free', 'findPublicPhonesSelected')
+      .addItem('Refresh contact options — free', 'refreshContactOptions')
       .addItem('Fill missing details — all leads…', 'fillMissing')
       .addItem('Refresh decision-makers for selected leads…', 'redoPeopleSelected')
       .addItem('Find work contacts for selected leads…', 'findWorkContactsSelected')
       .addItem('Add a known decision-maker…', 'addKnownWorkContact')
       .addItem('Find / verify selected work emails…', 'verifyWorkContactsSelected')
       .addItem('Copy verified contacts to Leads', 'publishVerifiedContacts'))
+    .addSubMenu(ui.createMenu('Apollo — selected rows only')
+      .addItem('Find people for selected leads — free…', 'findApolloPeopleSelected')
+      .addItem('Get work email for selected contacts…', 'enrichApolloEmailsSelected')
+      .addItem('Get phone for selected contacts…', 'revealApolloPhonesSelected')
+      .addItem('Check pending phone results — free', 'pollApolloPhonesSelected')
+      .addItem('Copy selected valid phones to Leads', 'publishVerifiedPhones')
+      .addItem('Open contact review', 'openHunterContacts')
+      .addItem('Credits & connection…', 'showApolloStatus'))
     .addItem('Check system status', 'checkReadiness')
     .addSeparator()
     .addSubMenu(ui.createMenu('Settings')
@@ -210,7 +223,7 @@ function repairPeopleLinks() {
       const live=sh.getRange(leadSheetRow_(row._r),1,1,LEAD_COLS.length).getValues()[0];
       if(live[i('people')]!==row.people)continue;
       logEvent_({type:'repair',source:'people_links',cost:0,note:'Before '+row.id+': '+row.people+' · channel: '+live[i('channel')]});
-      row.people=clean;row.contact=live[i('contact')];row.channel=live[i('channel')];
+      row.people=clean;row.contact=leadFieldValue_('contact',live[i('contact')]);row.email=leadFieldValue_('email',live[i('email')]);row.channel=live[i('channel')];
       sh.getRange(leadSheetRow_(row._r),i('people')+1).setValue(sheetValue_(clean));
       sh.getRange(leadSheetRow_(row._r),i('channel')+1).setValue(peopleChannel_(row));
       changed++;
@@ -421,7 +434,7 @@ function isUpwork_(source) { return /^upwork/.test(String(source || '')); }
 
 
 function channel_(row) {
-  const c = String(row.contact || '');
+  const c = [leadFieldValue_('email',row.email),leadFieldValue_('contact',row.contact)].filter(Boolean).join(' · ');
   if (/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(c)) return 'Email';
   if (row.source === 'x' || /^@/.test(c)) return 'X DM';
   if (isUpwork_(row.source)) return 'Upwork proposal';
@@ -437,6 +450,9 @@ function styleLeads_(sh) {
   sh.setFrozenRows(LEAD_HEADER_ROW);
   sh.setFrozenColumns(2);
   formatLeadRows_(sh, LEAD_FIRST_ROW, n);
+  ['email','phone'].forEach(c=>{sh.getRange(LEAD_FIRST_ROW,idx(c),n,1).setNumberFormat('@');sh.setColumnWidth(idx(c),260);});
+  sh.getRange(LEAD_HEADER_ROW,idx('email')).setNote('Published or verified work emails. Hover for source; public publication is not deliverability verification. [Next] labels are instructions, not data.');
+  sh.getRange(LEAD_HEADER_ROW,idx('phone')).setNote('Public: number published on the company website; Person: confirmed Apollo person. Hover for source and checked date. [Next] labels are instructions, not numbers.');
   try { sh.getColumnGroupControlPosition && sh.setColumnGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE); } catch (e) {}
   for (let c = 1; c <= sh.getMaxColumns(); c++) {
     for (let d = sh.getColumnGroupDepth(c); d >= 1; d--) { const g = sh.getColumnGroup(c, d); if (g) g.remove(); }
@@ -545,12 +561,18 @@ function installLeadsLayout_(sh) {
   const top=sh.getRange(1,1,2,sh.getLastColumn()).getValues();
   const headerRow=top[0][0]==='company'?1:LEAD_HEADER_ROW;
   const header=top[headerRow-1].map(String);
-  const core=h=>h.filter(c=>!['priority_pct','added_label','added'].includes(c));
+  const core=h=>h.filter(c=>!['priority_pct','added_label','added','email','phone'].includes(c));
   if (new Set(header).size!==header.length || core(header).join('|')!==core(LEAD_COLS).join('|') || !header.includes('added'))
     throw new Error('Unexpected Leads columns; layout stopped before changing data.');
+  // Simulate the whole migration first, including partially upgraded schemas.
+  const planned=header.filter(c=>c!=='added_label');
+  ['priority_pct','email','phone'].forEach(c=>{if(!planned.includes(c))planned.splice(LEAD_COLS.indexOf(c),0,c);});
+  const addedAt=planned.indexOf('added');planned.splice(addedAt,1);planned.splice(LEAD_COLS.indexOf('added'),0,'added');
+  if(planned.join('|')!==LEAD_COLS.join('|'))throw new Error('Unexpected Leads column positions; layout stopped before changing data.');
   if(sh.getFilter())sh.getFilter().remove();
   if(header.includes('added_label')) { const at=header.indexOf('added_label');sh.deleteColumn(at+1);header.splice(at,1); }
   if(!header.includes('priority_pct')) { const at=LEAD_COLS.indexOf('priority_pct');sh.insertColumnAfter(at);sh.getRange(headerRow,at+1).setValue('priority_pct');header.splice(at,0,'priority_pct'); }
+  ['email','phone'].forEach(c=>{if(!header.includes(c)){const at=LEAD_COLS.indexOf(c);sh.insertColumnAfter(at);sh.getRange(headerRow,at+1).setValue(c);header.splice(at,0,c);}});
   const oldAt=header.indexOf('added'), newAt=LEAD_COLS.indexOf('added');
   if(oldAt!==newAt) { sh.moveColumns(sh.getRange(1,oldAt+1,sh.getMaxRows(),1),newAt+1+(oldAt<newAt?1:0));header.splice(oldAt,1);header.splice(newAt,0,'added'); }
   if(header.join('|')!==LEAD_COLS.join('|'))throw new Error('Leads layout validation failed.');
@@ -561,7 +583,7 @@ function updateLeadsLayout() {
   try {
     const ss=SpreadsheetApp.getActive(), sh=ss.getSheetByName(TABS.leads);
     if(!sh)throw new Error('Leads tab is missing.');
-    installLeadsLayout_(sh);styleLeads_(sh);refreshProgress_();SpreadsheetApp.flush();
+    installLeadsLayout_(sh);styleLeads_(sh);if(typeof refreshContactGuidance_==='function')refreshContactGuidance_();refreshProgress_();SpreadsheetApp.flush();
   
     ss.setRecalculationInterval(SpreadsheetApp.RecalculationInterval.MINUTE);
     ss.setActiveSheet(sh);sh.getRange('A1').activate();
@@ -814,7 +836,7 @@ function worker() {
   } catch (err) {
     progressPatch_({ workerError:String(err).slice(0,160) });
     logEvent_({ type: 'error', source: 'worker', note: 'Background run: ' + String(err).slice(0, 300) });
-  } finally { refreshProgress_(true); lock.releaseLock(); }
+  } finally { try{if(typeof refreshContactGuidance_==='function')refreshContactGuidance_();}finally{refreshProgress_(true);lock.releaseLock();} }
 }
 function scoreContinue() { removeTriggersFor_('scoreContinue'); ensureWorker_(); worker(); }
 function lookupContinue() { removeTriggersFor_('lookupContinue'); ensureWorker_(); worker(); }
@@ -841,7 +863,7 @@ function pendingSpend_() {
 function scoreEstimate_(count) { return count * JEV_TOKENS_PER_ROW_EST * JEV_USD_PER_M_INPUT / 1e6; }
 function cellEstimate_(fields) {
   return (fields.some(c=>CELL_SCORE_FIELDS.includes(c))?scoreEstimate_(1):0) +
-    (fields.some(c=>CELL_LOOKUP_FIELDS.includes(c))?0.001:0);
+    (fields.some(c=>['company','website','people'].includes(c))?0.001:0);
 }
 function queuedSpend_() {
   return scoreEstimate_(approvedLeft_()) + cellFillQueue_().reduce((n,t)=>n+cellEstimate_(t.fields),0);
@@ -1755,6 +1777,7 @@ function confirmRow_(sh, row) {
 
 
 function writeLeadFields_(sh,row,fields) {
+  if(fields.includes('phone')&&row._publicPhoneCheck)sh.getRange(leadSheetRow_(row._r),LEAD_COLS.indexOf('phone')+1).setNote(publicPhoneNote_(row._publicPhoneCheck,!!row.phone));
   const indexes=Array.from(new Set(fields.map(c=>LEAD_COLS.indexOf(c)))).sort((a,b)=>a-b);
   if(indexes.some(i=>i<0))throw new Error('Unknown lead field in write mask');
   const runs=[];
@@ -1972,10 +1995,10 @@ function hasPeopleProfile_(text) {
     (line.match(/https?:\/\/[^\s)]+/g) || []).some(peopleProfile_));
 }
 function peopleChannel_(row) {
-  if (/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(String(row.contact || ''))) return 'Email';
+  if (/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test([leadFieldValue_('email',row.email),leadFieldValue_('contact',row.contact)].filter(Boolean).join(' · '))) return 'Email';
   if (['X DM','Upwork proposal'].includes(row.channel)) return row.channel;
   if (hasPeopleProfile_(row.people) || hasPeopleProfile_(row.contact)) return 'LinkedIn DM';
-  return row.channel === 'LinkedIn DM' ? 'Find contact first' : (row.channel || channel_(row));
+  return ['LinkedIn DM','Email'].includes(row.channel) ? channel_(row) : (row.channel || channel_(row));
 }
 
 
@@ -2259,7 +2282,7 @@ function collectPeople_(p, pages, deadline) {
     if ((live[i('status')] || 'new') !== 'new' || ![STEP.now, STEP.sample].includes(live[i('next_step')]) ||
       live[i('company')] !== row.company || live[i('website')] !== row.website || (previous ? live[i('people')] !== priorPeople : live[i('people')])) continue;
     if (String(live[i('lookup')] || '') !== String(row.lookup || '')) continue;
-    row.contact = live[i('contact')]; row.channel = live[i('channel')];
+    row.contact = leadFieldValue_('contact',live[i('contact')]); row.email=leadFieldValue_('email',live[i('email')]); row.channel = live[i('channel')];
     row.channel = peopleChannel_(row);
     const today = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
     const lk = String(live[i('lookup')] || '').replace(/^done \d{4}-\d{2}-\d{2}/, 'done ' + today).replace('people: google searching', note);
@@ -2372,10 +2395,17 @@ function pickPeople_(accepted) {
 }
 
 function lookupRow_(row, deadline, usage, options) {
+  if(options&&options.cellFill&&options.fields.every(c=>['phone','email','contact'].includes(c))&&siteUrl_(row.website)){
+    const c=findContactsFree_(row.website,deadline);
+    if(options.fields.includes('phone')&&!row.phone)applyPublicPhoneResult_(row,c);
+    if(options.fields.includes('email')&&!row.email&&c.emails.length)row.email=c.emails.join(' · ');
+    if(options.fields.includes('contact')&&!row.contact&&c.socials.length)row.contact=c.socials.join(' · ');
+    return row;
+  }
   if(isCold_(row)){row.lookup='review: use Find work contacts for selected leads, then verify emails in Contacts';return;}
   const selected=options&&options.cellFill, fields=selected?new Set(options.fields):null;
   const want=c=>!selected||fields.has(c);
-  const wantSite=!selected||['website','contact','people'].some(c=>fields.has(c));
+  const wantSite=!selected||['website','contact','email','phone','people'].some(c=>fields.has(c));
   const u = usage || {};
   const r = {};
   const approver = (String(row.lookup || '').match(/ask:\s*(\w+)/) || [])[1] || 'unclear';
@@ -2431,10 +2461,12 @@ function lookupRow_(row, deadline, usage, options) {
       }
     } else trail.push(cands.length ? `site: not confirmed (${cands.map(c => c.host).join(', ')})` : 'site: none found');
   }
-  if (want('contact') && siteUrl_(row.website) && !/@/.test(String(row.contact || '')) && Date.now() < deadline) {
+  if (['contact','email','phone'].some(c=>want(c)&&!row[c]) && siteUrl_(row.website) && Date.now() < deadline) {
     const c = findContactsFree_(row.website, deadline);
-    const add = [...c.emails, ...c.socials].filter(x => !String(row.contact || '').includes(x));
-    if (add.length) { row.contact = [row.contact, add.join(' · ')].filter(Boolean).join(' · '); trail.push(`contact: ${c.emails.length} email, ${c.socials.length} social (site)`); }
+    if(want('contact') && !row.contact && c.socials.length)row.contact=c.socials.join(' · ');
+    if(want('email') && !row.email && c.emails.length)row.email=c.emails.join(' · ');
+    if(want('phone') && !row.phone)applyPublicPhoneResult_(row,c);
+    trail.push(`contact: ${c.emails.length} published email, ${(c.phones||[]).length} public phone (site)`);
   }
   if (want('people') && !row.people) {
     const poster = jobPoster_(row);
@@ -2517,7 +2549,7 @@ function refillRows_(data, today) {
     if (!v('company') || placeholderName_(v('company'))) continue;
     if (!(lk.startsWith('done') || lk.startsWith('error')) || lk.startsWith('done ' + today)) continue;
     if (/people: google (queued|searching)/.test(lk)) continue;
-    const missing = [!siteUrl_(v('website')) && 'website', !/@/.test(v('contact')) && 'email', !v('people') && 'people'].filter(Boolean);
+    const missing = [!siteUrl_(v('website')) && 'website', !/@/.test(v('email')||v('contact')) && 'email', !v('people') && 'people'].filter(Boolean);
     if (!missing.length) continue;
     const ask = (lk.match(/ask:\s*\w+/) || ['ask: unclear'])[0];
     const site = (lk.match(/site verified from post:[^·]*/) || [])[0];
@@ -2534,7 +2566,7 @@ function missingLeadScores_(row) {
 const CELL_FILL_KEY='LEAD_HUNTER_CELL_FILL';
 const CELL_FILL_ERROR_KEY='LEAD_HUNTER_CELL_FILL_ERRORS';
 const CELL_SCORE_FIELDS=['match_pct','readiness_pct','next_step','why','missing','what_to_say','confidence'];
-const CELL_LOOKUP_FIELDS=['company','website','contact','people'];
+const CELL_LOOKUP_FIELDS=['company','website','contact','email','phone','people'];
 const CELL_SUPPORTED=[...CELL_SCORE_FIELDS,...CELL_LOOKUP_FIELDS,'channel','priority_pct'];
 function cellFillQueue_() { return JSON.parse(PropertiesService.getScriptProperties().getProperty(CELL_FILL_KEY)||'[]'); }
 function saveCellFillQueue_(queue) {
@@ -2543,7 +2575,7 @@ function saveCellFillQueue_(queue) {
   PropertiesService.getScriptProperties().setProperty(CELL_FILL_KEY,value);
 }
 function cellFillHash_(row) {
-  const source=JSON.stringify(LEAD_COLS.filter(c=>c!=='priority_pct').map(c=>row[c]===undefined?'':row[c]));
+  const source=JSON.stringify(LEAD_COLS.filter(c=>c!=='priority_pct').map(c=>leadFieldValue_(c,row[c]===undefined?'':row[c])));
   return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,source,Utilities.Charset.UTF_8).map(b=>('0'+((b+256)%256).toString(16)).slice(-2)).join('');
 }
 function selectedCellFields_(data,ranges,hidden) {
@@ -2567,7 +2599,7 @@ function cellFillPlan_(row,requested) {
     fields.add('match_pct');fields.add('readiness_pct');
   }
   if(fields.has('channel') && channel_(row)==='Find contact first')fields.add('contact');
-  if((fields.has('contact')||fields.has('people')) && !siteUrl_(row.website))fields.add('website');
+  if(['contact','email','phone','people'].some(c=>fields.has(c)) && !siteUrl_(row.website))fields.add('website');
   if(fields.has('website') && (!row.company||placeholderName_(row.company)))fields.add('company');
   const list=Array.from(fields);
   return {fields:list,unsupported,dependencies:list.filter(c=>!requested.includes(c)),
@@ -2591,17 +2623,17 @@ function fillSelectedCells() {
   const unsupported=Array.from(new Set(plans.flatMap(x=>x.unsupported)));
   if(!usable.length)return ui.alert('Nothing to queue',queued.size&&plans.some(x=>queued.has(x.id))?'Selected leads already have a cell-fill request in progress.':
     'These fields require source data or your input and cannot be invented: '+unsupported.join(', '),ui.ButtonSet.OK);
-  const scoring=usable.filter(x=>x.score).length, lookups=usable.filter(x=>x.lookup).length;
-  if((scoring||lookups)&&!jevKey_())return ui.alert('Connection needed','Add the Jev key in Settings → Connections.',ui.ButtonSet.OK);
+  const scoring=usable.filter(x=>x.score).length, lookups=usable.filter(x=>x.lookup).length,paidLookups=usable.filter(x=>x.fields.some(c=>['company','website','people'].includes(c))).length;
+  if((scoring||paidLookups)&&!jevKey_())return ui.alert('Connection needed','Add the Jev key in Settings → Connections.',ui.ButtonSet.OK);
   const requested=Array.from(new Set(usable.flatMap(x=>x.requested.filter(c=>CELL_SUPPORTED.includes(c)))));
   const dependencies=Array.from(new Set(usable.flatMap(x=>x.dependencies)));
-  const estimate=scoring*JEV_TOKENS_PER_ROW_EST*JEV_USD_PER_M_INPUT/1e6+lookups*.001;
+  const estimate=usable.reduce((n,x)=>n+cellEstimate_(x.fields),0);
   if(!budgetAllows_(estimate,{admission:true}))return ui.alert('Monthly budget reached','Raise the budget in Rules or wait for the next month.',ui.ButtonSet.OK);
   if(!confirm_('Fill selected cells?',[
     `${usable.length} leads. Selected fields: ${requested.join(', ')}.`,
     dependencies.length?'Required inputs to fill: '+dependencies.join(', ')+'.':'No extra cells need filling.',
     'Skip does not block this request. Only these fields are written; existing formula results may recalculate. No outreach is sent.',
-    `Estimate: about $${estimate.toFixed(4)} for ${scoring} scoring and ${lookups} lookup tasks; up to ${lookups*3} Tavily credits. No Apify run is started by cell fill.`,
+    `Estimate: about $${estimate.toFixed(4)} for ${scoring} scoring and ${lookups} lookup tasks; up to ${paidLookups*3} Tavily credits. No Apify run is started by cell fill.`,
     unsupported.length?'Not auto-fillable (left unchanged): '+unsupported.join(', ')+'.':'',
     'Starts in about 5 minutes. Unavailable or failed results are noted on the selected cells and in Log.'
   ].filter(Boolean)))return;
@@ -2652,7 +2684,7 @@ function testSelectedCellFill() {
 function writeCellFillResult_(sh,task,row) {
   if(!confirmRow_(sh,row))throw new Error('Lead was removed; no cells written.');
   const values=sh.getRange(leadSheetRow_(row._r),1,1,LEAD_COLS.length).getValues()[0];
-  const current=Object.fromEntries(LEAD_COLS.map((c,k)=>[c,values[k]]));
+  const current=Object.fromEntries(LEAD_COLS.map((c,k)=>[c,leadFieldValue_(c,values[k])]));
   if(cellFillHash_(current)!==task.hash)throw new Error('Lead changed during processing; no cells written. Select again.');
   const unavailable=[], writable=[];
   task.fields.forEach(c=>{
@@ -2662,9 +2694,11 @@ function writeCellFillResult_(sh,task,row) {
     writable.push(c);
   });
   writeLeadFields_(sh,row,writable);
+  if(row._publicPhoneCheck)sh.getRange(leadSheetRow_(row._r),LEAD_COLS.indexOf('phone')+1).setNote(publicPhoneNote_(row._publicPhoneCheck,!!row.phone));
   if(task.fields.includes('priority_pct'))writePriorityFormulas_(sh,leadSheetRow_(row._r),1);
   task.requested.forEach(c=>{
     const cell=sh.getRange(leadSheetRow_(row._r),LEAD_COLS.indexOf(c)+1);
+    if(c==='phone'&&row._publicPhoneCheck)return;
     cell.setNote(unavailable.includes(c)?'No verified value found by Lead Hunter. See Log for this attempt.':'Filled by Lead Hunter: selected cell or required input.');
   });
   return unavailable;
@@ -2782,7 +2816,7 @@ function lookupBatch_(deadline) {
   const waiting = lookupRowsWaiting_(data);
   const usage = {};
   let done = 0;
-  const cols = ['company', 'website', 'contact', 'people', 'channel', 'lookup', ...AI_COLS.filter(c => c !== 'lookup' && c !== 'channel')];
+  const cols = ['company', 'website', 'contact', 'email', 'phone', 'people', 'channel', 'lookup', ...AI_COLS.filter(c => c !== 'lookup' && c !== 'channel')];
   for (const r of waiting) {
     if (Date.now() > deadline - 80000) break;
     const row = {};
@@ -2824,49 +2858,64 @@ function lookupBatch_(deadline) {
 
 
 function enrichContacts() {
-  const sh = SpreadsheetApp.getActive().getSheetByName(TABS.leads);
-  const data = leadData_(sh);
-  const i = c => LEAD_COLS.indexOf(c);
-  const rows = [];
-  for (let r = 1; r < data.length && rows.length < 25; r++) {
-    const pitch = [STEP.now, STEP.sample].includes(data[r][i('next_step')]);
-    if (pitch && data[r][i('website')] && !String(data[r][i('contact')]).includes('@')) rows.push({ _r:r, id:String(data[r][i('id')]), site: String(data[r][i('website')]) });
+  const ss=SpreadsheetApp.getActive(),sh=ss.getSheetByName(TABS.leads),data=leadData_(sh),rows=[];
+  for(let r=1;r<data.length&&rows.length<25;r++){
+    const row=Object.fromEntries(LEAD_COLS.map((c,k)=>[c,data[r][k]]));row._r=r;
+    if(row.id&&(row.status||'new')==='new'&&[STEP.now,STEP.sample].includes(row.next_step)&&siteUrl_(row.website)&&!row.email&&!/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(String(row.contact||'')))rows.push(row);
   }
-  if (!rows.length) return SpreadsheetApp.getActive().toast('No pitch rows need an email.');
-  let found = 0, checked = 0;
-  const t0 = Date.now();
-  rows.forEach(x => {
-    if (Date.now() - t0 > 200000) return;
-    checked++;
-    const c = findContactsFree_(x.site, t0 + 200000);
-    if (!c.emails.length && !c.socials.length) return;
-    if (!confirmRow_(sh, x)) return;
-    const live = sh.getRange(leadSheetRow_(x._r),1,1,LEAD_COLS.length).getValues()[0];
-    if (String(live[i('website')]) !== x.site || ![STEP.now,STEP.sample].includes(live[i('next_step')]) || (live[i('status')] || 'new') !== 'new') return;
-    const cur = String(live[i('contact')] || '');
-    const add = [...c.emails, ...c.socials].filter(v => !cur.includes(v)).join(' · ');
-    if (!add) return;
-    sh.getRange(leadSheetRow_(x._r), i('contact') + 1).setValue(cur ? `${cur} · ${add}` : add);
-    if (c.emails.length) sh.getRange(leadSheetRow_(x._r), i('channel') + 1).setValue('Email');
-    found++;
-  });
-  logEvent_({ type: 'run', source: 'email_finder_free', items: rows.length, added: found, cost: 0, approvedVia: 'Owner (manual)',
-    note: `${found} of ${checked} sites gave an email or social link` + (checked < rows.length ? ` · ${rows.length - checked} left for next click` : '') });
-  SpreadsheetApp.getActive().toast(`Free finder: contact details for ${found} of ${checked} sites.` + (checked < rows.length ? ' Click again for the rest.' : ''));
+  if(!rows.length)return ss.toast('No eligible leads need an email.');
+  const deadline=Date.now()+200000;let found=0,checked=0;
+  for(const before of rows){
+    if(Date.now()>deadline-15000)break;
+    const result=findContactsFree_(before.website,deadline),row={...before};checked++;
+    if(result.emails.length)row.email=result.emails.join(' · ');
+    if(!row.contact&&result.socials.length)row.contact=result.socials.join(' · ');
+    if(!row.phone)applyPublicPhoneResult_(row,result);
+    row.channel=peopleChannel_(row);
+    if(commitLookup_(sh,row,before,before.lookup,['email','phone','contact','channel'])){if(row.email||row.phone)found++;}
+  }
+  logEvent_({type:'run',source:'email_finder_free',items:checked,added:found,cost:0,approvedVia:'manual',note:'Public company pages; published email/phone is not verified person ownership.'});
+  if(typeof refreshContactGuidance_==='function')refreshContactGuidance_();
+  ss.toast('Free public contacts: '+found+' found / '+checked+' checked. No provider credits used.');
 }
 
 const CONTACT_PATHS = ['', '/contact', '/contact-us', '/pages/contact', '/about', '/about-us', '/pages/about-us', '/impressum'];
 
 function findContactsFree_(site, deadline) {
-  const base = siteUrl_(site).replace(/^(https?:\/\/[^/]+).*/, '$1');
-  if (!base) return { emails: [], socials: [] };
-  const host = base.replace(/^https?:\/\/(www\.)?/, '');
-  const res = fetchAllSafe_(CONTACT_PATHS.map(p => ({ url: base + p, muteHttpExceptions: true, followRedirects: true,
-    headers: { 'User-Agent': BROWSER_UA }, timeoutSeconds: tmo_(deadline, 10) })), deadline);
-  const html = res.filter(r => r && r.getResponseCode() < 400).map(r => { try { return r.getContentText().slice(0, 300000); } catch (e) { return ''; } }).join(' ');
-  return contactsFromHtml_(html, host);
+  const base=siteUrl_(site).replace(/^(https?:\/\/[^/]+).*/, '$1');
+  if(!base)return {emails:[],socials:[],phones:[],readable:0};
+  const host=base.replace(/^https?:\/\/(www\.)?/, ''),urls=CONTACT_PATHS.map(p=>base+p);
+  const res=fetchAllSafe_(urls.map(url=>({url,muteHttpExceptions:true,followRedirects:false,headers:{'User-Agent':BROWSER_UA},timeoutSeconds:tmo_(deadline,10)})),deadline);
+  const pages=[];res.forEach((r,i)=>{try{if(r&&r.getResponseCode()>=200&&r.getResponseCode()<300)pages.push({html:r.getContentText().slice(0,300000),url:urls[i]});}catch(e){}});
+  const c=contactsFromHtml_(pages.map(p=>p.html).join(' '),host),seen=new Set(),phones=[];
+  pages.forEach(p=>publicPhonesFromHtml_(p.html).forEach(number=>{if(!seen.has(number)){seen.add(number);phones.push({number,source_url:p.url});}}));
+  return {...c,phones:phones.slice(0,3),readable:pages.length};
 }
-
+function publicPhoneNumber_(value){
+  let s=String(value||'').trim();try{s=decodeURIComponent(s);}catch(e){return '';}
+  s=s.replace(/&amp;/g,'&').replace(/[().\s-]/g,'');
+  return /^\+?\d{7,15}$/.test(s)&&! /^(.)\1+$/.test(s.replace(/^\+/,''))?s:'';
+}
+function publicPhonesFromHtml_(html){
+  const found=[],add=v=>{const n=publicPhoneNumber_(v);if(n&&!found.includes(n))found.push(n);};
+  String(html||'').replace(/href\s*=\s*["']tel:([^"'<>]+)["']/gi,(_,v)=>{add(v);return '';});
+  // Some contact pages publish plain text. Require a phone/call label and a
+  // formatted number; never scan arbitrary digit strings, dates or prices.
+  const visible=String(html||'').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;|&#160;/gi,' ').replace(/\s+/g,' ');
+  visible.replace(/\b(?:phone|telephone|tel|call us|call|mobile|whatsapp)\s*(?:number\s*)?[:.]?\s*(?:at\s*)?(\+?\(?\d[\d() .-]{5,24}\d)/gi,(_,value)=>{
+    const n=value.trim();if(!/^\d{4}-\d{2}-\d{2}$/.test(n)&&/[()+ .-]/.test(n))add(n);return '';
+  });
+  String(html||'').replace(/<script\b[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,(_,body)=>{
+    try{const walk=(v,org=false)=>{if(!v||typeof v!=='object')return;if(Array.isArray(v))return v.forEach(x=>walk(x,org));
+      const types=[].concat(v['@type']||[]),business=org||types.some(t=>/^(Organization|LocalBusiness|Corporation|Store|Restaurant|ProfessionalService|ContactPoint|[A-Za-z]+Business)$/.test(t));
+      if(types.includes('Person'))return;if(business&&typeof v.telephone==='string')add(v.telephone);
+      Object.values(v).forEach(x=>walk(x,business));};walk(JSON.parse(body));}catch(e){}return '';
+  });return found.slice(0,3);
+}
+function applyPublicPhoneResult_(row,result){
+  const p=(result.phones||[])[0];row._publicPhoneCheck={checked:new Date().toISOString(),readable:result.readable||0,source:p?p.source_url:''};
+  if(p)row.phone='Public: '+p.number;
+}
 
 function contactsFromHtml_(html, host) {
   const text = String(html || '').replace(/&#64;|\[at\]|\(at\)/gi, '@');
@@ -2891,9 +2940,8 @@ function writeEmails_(items) {
   let n = 0;
   for (let r = 1; r < data.length; r++) {
     const e = found[host(data[r][i('website')])];
-    if (e && !String(data[r][i('contact')]).includes('@')) {
-      const cur = data[r][i('contact')];
-      sh.getRange(leadSheetRow_(r), i('contact') + 1).setValue(cur ? `${cur} · ${e}` : e);
+    if (e && !data[r][i('email')]) {
+      sh.getRange(leadSheetRow_(r), i('email') + 1).setValue(sheetValue_(e));
       sh.getRange(leadSheetRow_(r), i('channel') + 1).setValue('Email');
       n++;
     }
@@ -3002,6 +3050,6 @@ function validateSourceRow_(row) {
 
 function redactSecretText_(value) {
   let text=String(value||''),props=PropertiesService.getScriptProperties();
-  ['APIFY_TOKEN','JEV_KEY','GROQ_KEY','GEMINI_KEY','TAVILY_KEY','SERPER_KEY','HUNTER_KEY'].forEach(k=>{const secret=props.getProperty(k);if(secret)text=text.split(secret).join('[redacted]');});
+  ['APIFY_TOKEN','JEV_KEY','GROQ_KEY','GEMINI_KEY','TAVILY_KEY','SERPER_KEY','HUNTER_KEY','APOLLO_KEY'].forEach(k=>{const secret=props.getProperty(k);if(secret)text=text.split(secret).join('[redacted]');});
   return text.replace(/(Bearer\s+)[^\s"']+/gi,'$1[redacted]').replace(/([?&](?:api[_-]?key|token|access_token|signature|x-amz-signature)=)[^&\s]+/gi,'$1[redacted]');
 }

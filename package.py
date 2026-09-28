@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parent
 SKILL = ROOT / "lead-hunter-builder"
 FILES = [
     "SKILL.md", "START-HERE.md", "LICENSE", "agents/openai.yaml",
-    "assets/engine.gs", "assets/prospecting.gs", "assets/profile.example.json", "assets/profile.cold.example.json",
+    "assets/engine.gs", "assets/prospecting.gs", "assets/apollo.gs", "assets/contact-guidance.gs", "assets/profile.example.json", "assets/profile.cold.example.json",
     "references/cold-prospecting.md", "references/contact-providers.md", "references/intake.md", "references/sources.md", "references/architecture.md", "references/setup-and-testing.md",
-    "scripts/build.py", "scripts/test_builder.py", "scripts/test_engine.mjs", "scripts/cold_contracts.mjs", "scripts/test_hunter_dummy.py",
+    "scripts/build.py", "scripts/test_builder.py", "scripts/test_engine.mjs", "scripts/cold_contracts.mjs", "scripts/test_contacts.mjs", "scripts/test_hunter_dummy.py",
 ]
 PUBLIC_EXTRA = ["README.md", "LICENSE", "CHANGELOG.md", "VALIDATION.md", ".gitignore", "package.py", ".github/workflows/checks.yml"]
 FORBIDDEN = [

@@ -51,3 +51,7 @@ python3 package.py --check
 Use a new/empty output folder. Build files offline; no credentials or provider calls are needed. [VALIDATION](VALIDATION.md) describes what was checked and what still needs a user's native/live pilot. [Architecture](lead-hunter-builder/references/architecture.md) explains the reusable core.
 
 MIT licensed. Provider APIs and platforms have their own terms and charges.
+
+### 1.2.0 contact options
+
+Separate email and phone columns preserve existing source handles. Public phone lookup uses official contact pages first at zero provider credits; missing fields show the next step and credit ceiling. Optional Apollo uses your own key in request headers, a separate credit cap (initially 0), selected-only confirmation, and no automatic enrichment or sending. Existing Hunter settings remain separate.

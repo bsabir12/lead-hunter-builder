@@ -31,3 +31,9 @@ Run `testEngineeringHardening` and `testColdProspectingNative` in an owner-contr
 The archive contains only allowlisted skill code, fictional profiles, documentation and tests. Original spreadsheet/account IDs, customer fixtures, private portfolio links, API keys and OAuth files are excluded. Known credential/private-link patterns and archive parity are checked; pattern scanning is not proof that every possible secret could be detected. The public source was also reviewed for original-account references.
 
 The original live Lead Hunter script is outside this package and was not modified. [GitHub Actions](https://github.com/bsabir12/lead-hunter-builder/actions) runs the offline generator, engine and archive checks for every published commit. Native/live pilots remain separate from CI.
+
+## 1.2.0 contact update — 28 September 2026
+
+34 builder tests, 115 generated-engine contracts and 19 contact/guidance checks passed offline. The private deployment also passed 399 core/reliability, 32 Hunter, 22 Apollo, 26 progress, 12 layout and legacy migration checks. Native migration fixtures passed; a repeated live layout migration preserved all 383 lead IDs and original non-empty fields. Thirty existing public/source email addresses were copied to their dedicated column. Public artifacts contain no private workbook data or account keys.
+
+The owner’s Hunter account status succeeded with 50 credits remaining. The saved Apollo key did not pass authentication; paid Apollo behavior is covered by response fixtures, not a successful live enrichment claim. No real-person paid enrichment or phone reveal was run. Public users must validate their own keys, endpoint permissions, quotas and selected-row pilot; those entitlements are not transferred with this package.

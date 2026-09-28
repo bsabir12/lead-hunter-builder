@@ -1,6 +1,8 @@
 /** Cold prospecting and professional-contact enrichment. No sending functions. */
 const PROSPECT_EVIDENCE_COLS=['lead_id','facts','facts_url','hypothesis','timing_signal','timing_date','timing_url','researched_on'];
-const CONTACT_COLS=['lead_id','contact_id','company','domain','name','role','linkedin','identity_status','email','email_status','verified_on','source_urls','checked_on','note','do_not_contact','verified_email','published_email'];
+const LEGACY_CONTACT_COLS=['lead_id','contact_id','company','domain','name','role','linkedin','identity_status','email','email_status','verified_on','source_urls','checked_on','note','do_not_contact','verified_email','published_email'];
+const CONTACT_COLS=LEGACY_CONTACT_COLS.concat(['provider','provider_person_id','phone','phone_type','phone_status','phone_checked_on','pending_request_id']);
+const HUNTER_ROLES=[];
 const CONTACT_BUDGET_KEY='LH_CONTACT_CREDIT_BUDGET';
 function prospectConfig_() {
   return BUSINESS_CONFIG.prospecting || {approach:'demand',suitability:'Demand discovery',limitations:[],cold_min_fit:65,
@@ -18,12 +20,13 @@ function directoryLeads_(items) {
     const facts=[i.title,i.categoryName,i.address||i.city||'',i.countryCode||''].filter(Boolean).join(' · '),id='cold:maps:'+i.placeId;
     const domain=professionalDomain_(i.website);
     return {id,company:i.title,source:'cold_prospect',website:domain?'https://'+domain:'',link:safePublicUrl_(i.url),industry:i.categoryName,country:i.countryCode||'',
-      what_they_want:'Need unconfirmed — cold prospect',readiness_pct:'Unknown',posted:'',contact:'',people:'',
+      what_they_want:'Need unconfirmed — cold prospect',readiness_pct:'Unknown',posted:'',contact:'',email:'',phone:publicPhoneNumber_(i.phone)?'Public: '+publicPhoneNumber_(i.phone):'',people:'',
       notes:'Observed listing facts: '+facts+'\nHypothesis (unconfirmed): potential customer profile fit only',_text:'Cold company listing, not a buying request. '+facts,
       _evidence:[id,facts,safePublicUrl_(i.url),'Potential customer profile fit; need unconfirmed','','','',new Date()]};
   });
 }
 function contactSheets_() {
+  const prior=SpreadsheetApp.getActive().getSheetByName('Contacts');if(prior&&prior.getLastRow())migrateContactSchema_(prior);
   const contacts=sheet_('Contacts',CONTACT_COLS), evidence=sheet_('Prospect evidence',PROSPECT_EVIDENCE_COLS);
   contactRows_(contacts);
   if(PROSPECT_EVIDENCE_COLS.some((c,i)=>evidence.getDataRange().getValues()[0]?.[i]!==c))throw new Error('Prospect evidence schema differs; stop before writing.');
@@ -129,7 +132,7 @@ function contactRows_(sh) {
   const values=sh.getDataRange().getValues();
   if(CONTACT_COLS.some((c,i)=>values[0]?.[i]!==c))throw new Error('Contacts schema differs; stop before writing.');
   const ids=new Set();
-  return values.slice(1).map((r,i)=>Object.assign(Object.fromEntries(CONTACT_COLS.map((c,k)=>[c,r[k]??''])),{_r:i+2})).filter(c=>{
+  return values.slice(1).map((r,i)=>Object.assign(Object.fromEntries(CONTACT_COLS.map((c,k)=>[c,leadFieldValue_(c,r[k]??'')])),{_r:i+2})).filter(c=>{
     if(!c.lead_id&&!c.contact_id&&!c.name&&!c.email)return false;
     if(!c.lead_id||!c.contact_id||ids.has(c.contact_id))throw new Error('Contact identity is missing or duplicated; reconcile IDs before processing.');
     ids.add(c.contact_id);return true;
@@ -145,7 +148,7 @@ function contactSuppressed_(c,rows) {
 function savedContacts_() { const sh=SpreadsheetApp.getActive().getSheetByName('Contacts');return sh?contactRows_(sh):[]; }
 function coldChannel_(lead) {
   const all=savedContacts_(),domain=professionalDomain_(lead.website);
-  return all.some(c=>c.lead_id===lead.id&&c.domain===domain&&lead.contact===c.email&&contactCanPublish_(c)&&!contactSuppressed_(c,all))?'Email':'Find contact first';
+  return all.some(c=>c.lead_id===lead.id&&c.domain===domain&&lead.email===c.email&&contactCanPublish_(c)&&!contactSuppressed_(c,all))?'Email':'Find contact first';
 }
 function coldEvidenceText_(row) {
   return [row.company,row.industry,row.country,String(row.notes||'').split('\nHypothesis')[0]].filter(Boolean).join(' ');
@@ -153,7 +156,7 @@ function coldEvidenceText_(row) {
 function commitContact_(sh,before,result) {
   const live=contactRows_(sh).find(c=>c.contact_id===before.contact_id);
   if(!live||contactSnapshot_(live)!==contactSnapshot_(before))return false;
-  ['email','email_status','verified_on','verified_email','source_urls','checked_on','note','do_not_contact'].forEach(k=>{
+  ['name','role','linkedin','email','email_status','verified_on','verified_email','source_urls','checked_on','note','do_not_contact','provider','provider_person_id','phone','phone_type','phone_status','phone_checked_on','pending_request_id'].forEach(k=>{
     if(String(result[k]??'')!==String(before[k]??''))sh.getRange(live._r,CONTACT_COLS.indexOf(k)+1).setValue(sheetValue_(result[k]??''));
   });
   return true;
@@ -178,11 +181,11 @@ function reconcilePublishedContacts_() {
     if(!c.published_email)continue;
     const lead=cellFillRow_(leadData_(sh),c.lead_id);
     if(contactCanPublish_(c)&&!suppressed&&lead&&professionalDomain_(lead.website)===c.domain)continue;
-    if(lead&&(lead.status||'new')==='new'&&lead.contact===c.published_email&&confirmRow_(sh,lead)) {
+    if(lead&&(lead.status||'new')==='new'&&lead.email===c.published_email&&confirmRow_(sh,lead)) {
       const fresh=cellFillRow_(leadData_(sh),lead.id);
-      if(fresh&&(fresh.status||'new')==='new'&&fresh.contact===c.published_email) {
-        sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('contact')+1).setValue('');
-        sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('channel')+1).setValue('Find contact first');
+      if(fresh&&(fresh.status||'new')==='new'&&fresh.email===c.published_email) {
+        sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('email')+1).setValue('');
+        sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('channel')+1).setValue(peopleChannel_({...fresh,email:''}));
       }
     }
     tab.getRange(c._r,17).setValue('');
@@ -356,18 +359,22 @@ function publishVerifiedContacts() {
   reconcilePublishedContacts_();
   const ss=SpreadsheetApp.getActive(),tab=ss.getSheetByName('Contacts'),sh=ss.getSheetByName(TABS.leads);
   if(!tab)throw new Error('Contacts is not set up.');
+  if(ss.getActiveSheet().getName()!=='Contacts')return SpreadsheetApp.getUi().alert('Select the reviewed people in Contacts first.');
+  const ranges=tab.getActiveRangeList()?.getRanges()||[tab.getActiveRange()];
   const data=leadData_(sh),all=contactRows_(tab);let done=0;
-  for(const c of all.filter(v=>contactCanPublish_(v))) {
-    const lead=cellFillRow_(data,c.lead_id);if(!lead||(lead.status||'new')!=='new'||professionalDomain_(lead.website)!==c.domain||lead.contact)continue;
+  const selected=all.filter(c=>ranges.some(r=>c._r>=r.getRow()&&c._r<=r.getLastRow())&&!tab.isRowHiddenByFilter(c._r));
+  if(!selected.length||selected.length>5)return SpreadsheetApp.getUi().alert('Select 1–5 contacts.');
+  for(const c of selected.filter(v=>contactCanPublish_(v))) {
+    const lead=cellFillRow_(data,c.lead_id);if(!lead||(lead.status||'new')!=='new'||professionalDomain_(lead.website)!==c.domain||lead.email)continue;
     if(!confirmRow_(sh,lead))continue;
     const fresh=cellFillRow_(leadData_(sh),c.lead_id);if(!fresh||cellFillHash_(fresh)!==cellFillHash_(lead))continue;
     const current=contactRows_(tab),currentContact=current.find(v=>v.contact_id===c.contact_id);
     if(!currentContact||contactSnapshot_(currentContact)!==contactSnapshot_(c)||!contactCanPublish_(currentContact)||contactSuppressed_(c,current))continue;
-    sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('contact')+1).setValue(sheetValue_(c.email));
+    sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('email')+1).setValue(sheetValue_(c.email));
     sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('channel')+1).setValue('Email');done++;
     tab.getRange(currentContact._r,17).setValue(sheetValue_(c.email));
   }
-  ss.toast('Copied '+done+' verified work emails to empty Lead contacts. Buying readiness is unchanged.');
+  ss.toast('Copied '+done+' verified work emails to empty Leads email fields. Buying readiness is unchanged.');
 }
 function testColdProspectingNative() {
   // Isolated fixture tabs; never touches real contacts, provider accounts or triggers.
@@ -389,4 +396,13 @@ function testColdProspectingNative() {
     contacts.getRange(2,9).setValue('person@example.com');contacts.getRange(2,15).setValue('yes');expect(Math.round(80*w.fit_weight*10)/10);
     console.log('PASS: native cold formulas, edited mailbox and suppression fixtures; no provider calls.');
   } finally {created.forEach(sh=>ss.deleteSheet(sh));}
+}
+
+function migrateContactSchema_(sh) {
+ const n=sh.getLastColumn(),headers=n?sh.getRange(1,1,1,n).getValues()[0]:[];
+ if(headers.length===CONTACT_COLS.length&&CONTACT_COLS.every((c,i)=>headers[i]===c))return false;
+ if(headers.length===LEGACY_CONTACT_COLS.length&&LEGACY_CONTACT_COLS.every((c,i)=>headers[i]===c)){
+   sh.getRange(1,LEGACY_CONTACT_COLS.length+1,1,CONTACT_COLS.length-LEGACY_CONTACT_COLS.length).setValues([CONTACT_COLS.slice(LEGACY_CONTACT_COLS.length)]);return true;
+ }
+ throw new Error('Contacts schema differs; stop before writing.');
 }

@@ -6,7 +6,7 @@ Recheck official pricing, API access and response schemas in the owner's account
 | --- | --- | --- |
 | Hunter | Free API: 50 credits/month. Finder: 1 credit per result, built-in verification included. Dedicated verifier: 0.5 credit. API Domain Search: 1 credit per 1–10 emails returned. | Implemented first adapter; explicit zero-default local credit limit. |
 | Prospeo | 100 free monthly credits with limited API; person email enrichment costs 1 credit/result. Exact current paid tier price needs an account check. | Optional later fallback; not implemented. |
-| Apollo | People API search uses no credits but does not return email/phone; enrichment consumes credits and endpoint availability depends on account. Relevant free endpoints require work-email registration. | Consider for company/person coverage; not implemented. Keep mobile/personal-email/waterfall options off unless a separate suitable scope is agreed. |
+| Apollo | People API search uses no credits but does not return email/phone; enrichment consumes credits and endpoint availability depends on account. Relevant free endpoints require work-email registration. | Optional menu integration: own API key, free selected-domain people search, work email up to 1 credit/person, person-phone request up to 9 credits/person with manual polling. Paid cap defaults to 0 until the owner sets it. Personal-email and waterfalls stay disabled; valid DNC flags are withheld. API endpoint access depends on the user’s plan. |
 | Snov | Trial excludes API; Starter advertises $39/month and 1,000 credits. | Less suitable for a zero-cost API starter; not implemented. |
 | Apify Google search | Free plan rate card: $0.0045/page plus $0.001 start. Optional enrichment and verification are each $0.10/contact on Free; paid plan rates differ substantially. | Use for public search; do not enable email extras by default. |
 
@@ -27,3 +27,11 @@ The official `test-api-key` serves fixed dummy responses without consuming accou
 ## Choosing a fallback later
 
 Compare additional usable contacts against the incremental credits and plan minimum, on the same target segment. Stop after a fresh verified work email, respect suppression across providers, and record provenance/date per result. Add a second adapter only after its current schema and marginal value are verified; a waterfall is not automatically cheaper. Prospeo's current `/enrich-person` endpoint uses `X-KEY` with `only_verified_email: true`, `enrich_mobile: false` and name/company data; older tutorials can refer to different endpoints.
+
+## Contact order and visible gaps
+
+Reuse existing source contacts and directory phone fields first. Read explicit public phone links (`tel:`) structured organization telephone data, and visibly labeled formatted phone numbers on the official company website next: zero provider credits, subject to Apps Script fetch quotas. Do not scrape arbitrary digits, infer a country code, or attribute a public company number to a person. Empty fields display `[Next]` instructions with the next tool and maximum credits. The engine treats these labels as missing, so they never become scoring evidence or suppress retries. An unreadable site is not proof no phone exists.
+
+Leads separates source handles/links (`contact`), work addresses (`email`) and labeled public/person numbers (`phone`). Source-public emails are not deliverability verified; Contacts keeps the verification and identity states for named people. Paid Apollo phone actions check public pages first, then request a separate explicit approval for the selected people. Hover over public phones for provenance and time checked. Copy valid Apollo phones manually after identity review. Existing company numbers are preserved.
+
+Apify is a collection platform, not a universal email/phone directory. Reuse fields already delivered by a tested actor. Enable a new actor only after its source, permission to access, per-run ceiling and useful-contact yield are verified against direct public lookup and optional enrichment. Never start an actor automatically because a contact field is blank.

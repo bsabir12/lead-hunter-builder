@@ -1,3 +1,7 @@
+# 1.2.0 — 2026-09-28
+
+Separate Leads email/phone fields, free public-company phone lookup with provenance, and display-only next-tool/credit guidance. Optional selected-only Apollo search, work email and person-phone enrichment with header-only credentials, zero default paid cap, no waterfalls and no automatic sends. Existing source handles, identities, human edits and contact suppression are preserved.
+
 # Changelog
 
 ## 1.1.0 — 2026-09-28

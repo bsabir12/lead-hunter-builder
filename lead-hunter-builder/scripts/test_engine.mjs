@@ -44,7 +44,7 @@ function answers(e,value=.8){return Object.fromEntries([['poster',{choice:'buyer
 test('manual mode disables keys and network even when credentials exist',()=>{const e=env();e.props.JEV_KEY='fixture';assert.equal(e.s.jevKey_(),null);assert.throws(()=>e.s.providerFetch_('https://example.com'),/disabled/);assert.throws(()=>e.s.startRuns_('fixture'),/manual mode/);assert.equal(e.starts.length,0);});
 test('optional fallback models can remain unconfigured',()=>{const e=env([],assisted);e.props.GROQ_KEY='fixture';e.props.GEMINI_KEY='fixture';assert.equal(e.s.llmAsk_('system','text').error,'no key');});
 test('new installations have all sources disabled',()=>{const e=env([],{sources:[{name:'x',actor:'example/actor',max_usd:.1,input:{},note:'Fixture'}]});assert.equal(e.s.T.DEFAULT_SOURCES[0][1],false);assert.equal(e.timers.length,0);});
-test('blank Google tab grows before writing 29-column headers',()=>{const e=env();let width=26,wrote=false;const sh={getLastRow:()=>0,getMaxColumns:()=>width,insertColumnsAfter:(_at,n)=>{width+=n;},getRange:(_r,_c,_nr,nc)=>{assert.ok(nc<=width,'range exceeds sheet grid');return{setValues:()=>{wrote=true;return{setFontWeight:()=>{}};}};}};e.s.SpreadsheetApp.getActive=()=>({getSheetByName:()=>null,insertSheet:()=>sh});e.s.sheet_('Leads',e.H);assert.ok(wrote);});
+test('blank Google tab grows before writing 31-column headers',()=>{const e=env();let width=26,wrote=false;const sh={getLastRow:()=>0,getMaxColumns:()=>width,insertColumnsAfter:(_at,n)=>{width+=n;},getRange:(_r,_c,_nr,nc)=>{assert.ok(nc<=width,'range exceeds sheet grid');return{setValues:()=>{wrote=true;return{setFontWeight:()=>{}};}};}};e.s.SpreadsheetApp.getActive=()=>({getSheetByName:()=>null,insertSheet:()=>sh});e.s.sheet_('Leads',e.H);assert.ok(wrote);});
 for(const [goal,offer,role] of [['clients','Bookkeeping for clinics','finance manager'],['clients','Industrial pumps for factories','maintenance manager'],['jobs','Freelance websites for nonprofits','executive director']]){
  test('generic criteria work for '+offer,()=>{const e=env([],{...assisted,goal,business:{...config.business,offer},decision_roles:[role]});const a=answers(e);const r=e.s.jevDerive_(a,{company:'Example Buyer',source:'manual'});assert.equal(r.match_pct,80);assert.equal(r.readiness_pct,80);assert.equal(r.next_step,'Message today');assert.equal(e.s.jevState_({}).our_service,offer);assert.ok(e.s.peopleQueries_({company:'Example Buyer',website:'https://buyer.example'}).join(' ').includes(role));});
 }
@@ -115,10 +115,10 @@ test('fresh setup and repeated refresh preserve owner data and checkbox choices'
  sheets.Dashboard=sheet('Dashboard');
  const ss={getSheetByName:n=>sheets[n]||null,insertSheet:n=>(sheets[n]=sheet(n)),setActiveSheet:()=>{},moveActiveSheet:()=>{},getSpreadsheetTimeZone:()=>e.cfg.schedule.timezone,toast:()=>{}};
  Object.assign(e.s.SpreadsheetApp,{getActive:()=>ss,newDataValidation:()=>chain,newConditionalFormatRule:()=>chain,InterpolationType:{NUMBER:1},WrapStrategy:{CLIP:1}});
- e.s.setup();assert.ok(sheets['Services & offer']);assert.equal(sheets.Leads.getMaxColumns(),29);assert.deepEqual(plain(sheets.Leads.getRange(2,1,1,29).getValues()[0]),e.H);
+ e.s.setup();assert.ok(sheets['Services & offer']);assert.equal(sheets.Leads.getMaxColumns(),31);assert.deepEqual(plain(sheets.Leads.getRange(2,1,1,31).getValues()[0]),e.H);
  sheets.Sources.getRange(2,2).setValue(true);
  const row=e.H.map(c=>c==='id'?'owner-lead':c==='company'?'Owner company':c==='status'?'sent':c==='notes'?'Original note · next: Owner: confirm route':'');
- sheets.Leads.getRange(3,1,1,29).setValues([row]);
+ sheets.Leads.getRange(3,1,1,31).setValues([row]);
  e.s.setup();assert.equal(sheets.Sources.getRange(2,2).getValue(),true);assert.equal(sheets.Leads.getRange(3,e.H.indexOf('notes')+1).getValue(),'Original note · next: Owner: confirm route');assert.equal(sheets.Leads.getRange(3,e.H.indexOf('status')+1).getValue(),'sent');assert.ok(sheets.Dashboard);assert.equal(e.timers.length,0);
 });
 
