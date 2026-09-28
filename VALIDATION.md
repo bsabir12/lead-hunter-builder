@@ -23,6 +23,6 @@ Both sets respected the principal scope/evidence constraints. With the skill, th
 
 ## Before real recurring use
 
-Each installer must perform the native no-spend checks, verify their source schemas/model pricing and review a small owner-approved live pilot. No paid or quota-consuming provider call, real prospect import, outreach or schedule installation was performed for this package. GitHub's hosted workflow has been prepared; it is not reported as passed until run in the published repository.
+Each installer must perform the native no-spend checks, verify their source schemas/model pricing and review a small owner-approved live pilot. No paid or quota-consuming provider call, real prospect import, outreach or schedule installation was performed for this package. GitHub's hosted [Offline checks run #1](https://github.com/bsabir12/lead-hunter-builder/actions/runs/36411382858) passed on the published commit, running the 25 builder checks, generation, 61 engine checks and archive/privacy verification on Ubuntu.
 
 No original spreadsheet/account IDs, private portfolio links, customer fixtures, API keys or OAuth files are bundled. Known credential patterns and private-link/path patterns were scanned, with an explicit file allowlist. Pattern scanning cannot prove the absence of every possible secret; public files were also inspected for the original app's account references and business-specific exceptions.

@@ -6,7 +6,7 @@ You can start with manual imports and a $0 budget. Automated searches are option
 
 ## Download and start
 
-Download [lead-hunter-builder.zip](lead-hunter-builder.zip), then follow [START-HERE](lead-hunter-builder/START-HERE.md) to install in Claude or Codex.
+Download [lead-hunter-builder.zip](lead-hunter-builder.zip?raw=true), then follow [START-HERE](lead-hunter-builder/START-HERE.md) to install in Claude or Codex.
 
 Try:
 
