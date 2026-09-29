@@ -2,7 +2,7 @@
 
 Recheck official pricing, API access and response schemas in the owner's account before a real pilot. Listed allowances and charges are vendor claims, not measured coverage or accuracy. Never ask for a key in chat; the owner enters their own key directly in Apps Script. No shared account is required.
 
-Apollo's zero-credit search cost does not guarantee access on a Free account. A real owner pilot passed authentication and showed available credits, but both search and email enrichment returned HTTP 403 with a Free-plan access restriction. Check the exact account and endpoint; a successful health request proves the key, not enrichment permissions. The sheet shows search failures explicitly instead of treating them as no matches.
+Apollo's zero-credit search cost does not guarantee access on a Free account. An original owner pilot passed authentication and showed available credits, but both search and email enrichment returned HTTP 403 with a Free-plan access restriction. A second Free account newly registered with a custom-domain work email also authenticated and showed 85/85 lead credits, yet the zero-credit People API Search endpoint returned the same HTTP 403 restriction. Check the exact account and endpoint; a work-email login, successful health request and visible credits do not prove enrichment permissions. The sheet shows search failures explicitly instead of treating them as no matches.
 
 | Provider | Documented access and cost | Starter decision |
 | --- | --- | --- |
