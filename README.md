@@ -54,4 +54,4 @@ MIT licensed. Provider APIs and platforms have their own terms and charges.
 
 ### 1.2.0 contact options
 
-Separate email and phone columns preserve existing source handles. Public phone lookup uses official contact pages first at zero provider credits; missing fields show the next step and credit ceiling. Optional Apollo uses your own key in request headers, a separate credit cap (initially 0), selected-only confirmation, and no automatic enrichment or sending. Existing Hunter settings remain separate.
+Separate email and phone columns preserve existing source handles. The worker automatically checks official public pages for published emails, phones and company social links. If connected and supported, Apollo People Search also runs automatically at zero credits and remembers plan denial. `[Next]` cells name only the remaining owner action or paid tool with its maximum credit cost. Apollo and Hunter use the owner's keys and separate caps (initially 0); paid enrichment is selected-only and confirmed. No outreach is sent.

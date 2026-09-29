@@ -18,7 +18,7 @@ function leadData_(sh) {
   return data.map((r,n)=>n?r.map((v,k)=>leadFieldValue_(LEAD_COLS[k],v)):r);
 }
 function leadFieldValue_(field,value) {
-  return ['company','website','contact','people','email','phone','linkedin'].includes(field) && /^\[Next\] /.test(String(value||'')) ? '' : value;
+  return ['company','website','contact','people','email','phone','linkedin'].includes(field) && /^\[(?:Next|Working)\] /.test(String(value||'')) ? '' : value;
 }
 function leadSheetRow_(index) { return index + LEAD_HEADER_ROW; }
 const AI_COLS = ['next_step', 'match_pct', 'readiness_pct', 'why', 'missing', 'channel', 'what_to_say', 'lookup', 'confidence'];
@@ -451,8 +451,8 @@ function styleLeads_(sh) {
   sh.setFrozenColumns(2);
   formatLeadRows_(sh, LEAD_FIRST_ROW, n);
   ['email','phone'].forEach(c=>{sh.getRange(LEAD_FIRST_ROW,idx(c),n,1).setNumberFormat('@');sh.setColumnWidth(idx(c),260);});
-  sh.getRange(LEAD_HEADER_ROW,idx('email')).setNote('Published or verified work emails. Hover for source; public publication is not deliverability verification. [Next] labels are instructions, not data.');
-  sh.getRange(LEAD_HEADER_ROW,idx('phone')).setNote('Public: number published on the company website; Person: confirmed Apollo person. Hover for source and checked date. [Next] labels are instructions, not numbers.');
+  sh.getRange(LEAD_HEADER_ROW,idx('email')).setNote('Published or verified work emails. Hover for source; public publication is not deliverability verification. [Next]/[Working] labels are status, not data.');
+  sh.getRange(LEAD_HEADER_ROW,idx('phone')).setNote('Public: number published on the company website; Person: confirmed Apollo person. Hover for source and checked date. [Next]/[Working] labels are status, not numbers.');
   try { sh.getColumnGroupControlPosition && sh.setColumnGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE); } catch (e) {}
   for (let c = 1; c <= sh.getMaxColumns(); c++) {
     for (let d = sh.getColumnGroupDepth(c); d >= 1; d--) { const g = sh.getColumnGroup(c, d); if (g) g.remove(); }
@@ -618,7 +618,7 @@ function recordSearchAdded_(run,added) {
 
 
 function progressState_(x) {
-  const active=x.jobs+x.scoring+x.lookups+x.people+(x.cells||0);
+  const active=x.jobs+x.scoring+x.lookups+x.people+(x.cells||0)+(x.freeContacts||0);
   if(x.stalled)return {label:'Needs attention',detail:'a search has not finished after repeated checks; see Log',active:false};
   const issues=(x.meta.issues||[]).length+x.errors;
   if(x.recovery)return {label:'Needs attention',detail:'a search start needs reconciliation',active:false};
@@ -626,7 +626,7 @@ function progressState_(x) {
   if(active && x.worker===false)return {label:'Needs attention',detail:'work is queued but its background worker is missing',active:false};
   if(x.meta.blocked && !x.meta.starting)return {label:'Paused',detail:x.meta.blocked+(x.jobs?' · existing searches remain tracked':''),active:false};
   if(x.meta.starting || active) {
-    const parts=[x.cells&&`${x.cells} cell updates`,x.jobs&&`${x.jobs} searches`,x.scoring&&`${x.scoring} to score`,(x.lookups+x.people)&&`${x.lookups+x.people} lookups queued`].filter(Boolean);
+    const parts=[x.cells&&`${x.cells} cell updates`,x.jobs&&`${x.jobs} searches`,x.scoring&&`${x.scoring} to score`,(x.lookups+x.people)&&`${x.lookups+x.people} lookups queued`,x.freeContacts&&`${x.freeContacts} free contact checks`].filter(Boolean);
     if(x.paused)parts.push(`${x.paused} paused`);
     if(issues || x.meta.workerError)parts.push('some errors; see Log');
     return {label:'Working',detail:parts.join(' · ')||'starting searches',active:true};
@@ -652,7 +652,10 @@ function progressSnapshot_() {
   const paused=rows.filter(r=>new RegExp('(^paused '+utcMonth+'|people: google paused '+month+')').test(String(r[i('lookup')]))).length;
   const errors=rows.filter(r=>/^Jev error/.test(String(r[i('why')])) || /(^error:|people: google failed)/.test(String(r[i('lookup')]))).length+(Number(props.getProperty(CELL_FILL_ERROR_KEY))||0);
   let worker=null;try { worker=ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()==='worker'); }catch(e) {}
-  return {meta:progressRead_(),cells:cellFillQueue_().length,jobs:jobs.length,stalled:jobs.some(p=>Number(p.tries)>=12),scoring,lookups,people,paused,errors,unapproved:unscored.length-scoring,worker,
+  let freeContacts=0;try{freeContacts+=(typeof automaticFreeContactCount_==='function'?automaticFreeContactCount_():0);}catch(e){}
+  try{freeContacts+=(typeof pendingApolloPhoneCount_==='function'?pendingApolloPhoneCount_():0);}catch(e){}
+  try{freeContacts+=(typeof automaticApolloPeopleWorkLeft_==='function'&&automaticApolloPeopleWorkLeft_()?1:0);}catch(e){}
+  return {meta:progressRead_(),cells:cellFillQueue_().length,jobs:jobs.length,stalled:jobs.some(p=>Number(p.tries)>=12),scoring,lookups,people,freeContacts,paused,errors,unapproved:unscored.length-scoring,worker,
     recovery:!!props.getProperty('APIFY_START_RECOVERY'),
     missingKey:!!((scoring&&!props.getProperty('JEV_KEY'))||((jobs.length||people)&&!props.getProperty('APIFY_TOKEN')))};
 }
@@ -812,7 +815,8 @@ function approvedLeft_() {
 function workLeft_() {
   const data = leadData_();
   return cellFillQueue_().length>0 || pending_().length > 0 || (approvedLeft_() > 0 && unscoredRows_().length > 0) || lookupRowsWaiting_(data).length > 0 ||
-    (peopleQueue_(data).length > 0 && !!PropertiesService.getScriptProperties().getProperty('APIFY_TOKEN'));
+    (peopleQueue_(data).length > 0 && !!PropertiesService.getScriptProperties().getProperty('APIFY_TOKEN')) ||
+    (typeof automaticFreeContactWorkLeft_==='function'&&automaticFreeContactWorkLeft_());
 }
 
 function worker() {
@@ -831,6 +835,7 @@ function worker() {
     }
     if (Date.now() < deadline - 80000) lookupBatch_(deadline);
     if (Date.now() < deadline - 20000) startPeopleSearch_();
+    if (Date.now() < deadline - 20000 && typeof automaticFreeContactWork_==='function') automaticFreeContactWork_(deadline);
     updateForecast_();
     if (!workLeft_()) stopWorker_();
   } catch (err) {

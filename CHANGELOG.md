@@ -6,6 +6,14 @@ Apollo search errors now stop with an explicit access-error popup, preserving th
 
 # Changelog
 
+## 1.2.0 — automatic free contact research
+
+- Runs bounded official-page email, phone and company-social checks in the existing worker.
+- Runs Apollo People Search automatically only at zero credits when the saved key supports it; caches plan denial and per-lead attempts.
+- Polls already-paid Apollo phone jobs automatically at zero credits.
+- Shows zero-credit work as `[Working]`; `[Next]` names only an owner action or paid provider with its maximum credit cost.
+- Keeps paid Hunter/Apollo enrichment selected-only with explicit confirmation and zero default caps in public builds.
+
 ## 1.1.0 — 2026-09-28
 
 - Assess business suitability and route demand, cold or mixed prospecting before building.
