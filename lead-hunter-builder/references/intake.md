@@ -11,6 +11,7 @@ Before choosing sources, assess demand/cold/mixed/limited suitability using cold
 | Buyer type, geography, size, decision roles | Defines searches and optional exclusions | Keep broad; confirm before hard filtering |
 | What is good work? What should be excluded? | Builds observable criteria | Recommend 3–5 fit criteria, with reasons |
 | Signs they can act now | Builds readiness criteria | Recommend 2–4 signals of a workable opportunity |
+| Useful service-specific details | Adds only optional fields that affect qualification/action | Offer a few examples; none is valid |
 | Sources/accounts already used | Avoids unnecessary signup and paid work | Start with CSV/manual evidence |
 | Monthly budget and pilot ceiling, in USD | Makes permissions and costs concrete | Zero; no paid automation |
 | Sales cycle and preferred weekly schedule/timezone | Sets age, freshness and timers | Scheduling off |
@@ -37,3 +38,6 @@ The full example is `assets/profile.example.json`; the generator validates and r
 Keep the finished profile private if it contains competitive strategy or customer data. A public template should contain fictional examples only. Credentials never belong in this file.
 
 The optional `prospecting` block selects demand/cold/mixed, records suitability and limitations, and configures cold ranking and separate contact credits. See [cold-prospecting.md](cold-prospecting.md) and `assets/profile.cold.example.json`. Omit it only for legacy demand builds. Monetary Apify/Jev caps and Hunter credits are distinct; ask for both if both are enabled.
+
+
+The optional `sheet` block has `optional_fields` (up to 12 objects with unique `service_` keys, `label` and `purpose`) and `show_optional_core` (chosen from channel, what_to_say, follow_up_due, last_touch, thread, pay, employees, industry, country). Omission gives the clean essential view. Stable ID, saved source, posted date, lookup and confidence remain hidden. See [fields.md](fields.md) for business examples and preservation behavior.

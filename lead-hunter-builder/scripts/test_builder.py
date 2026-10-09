@@ -37,6 +37,35 @@ class BuilderTests(unittest.TestCase):
             p["fit"][0]["evidence"] = f"The request is from a buyer seeking {offer}."
             self.assertIn(offer, render(p))
 
+    def test_optional_service_fields_and_novice_field_guide(self):
+        self.p["sheet"] = {"optional_fields": [{"key": "service_tax_system", "label": "Tax system", "purpose": "Match bookkeeping experience to the buyer's jurisdiction"}], "show_optional_core": ["country"]}
+        with tempfile.TemporaryDirectory(prefix="lh-fields-test-") as tmp:
+            out = Path(tmp) / "build"
+            build(self.p, out)
+            self.assertIn("service_tax_system", (out / "Code.gs").read_text())
+            guide = (out / "FIELD-GUIDE.md").read_text()
+            self.assertIn("Tax system", guide)
+            self.assertIn("hidden", guide)
+            self.assertIn("automatic filling is unsupported", guide)
+
+    def test_optional_fields_reject_duplicate_and_core_collisions(self):
+        self.p["sheet"] = {"optional_fields": [{"key": "company", "label": "Company", "purpose": "Duplicate core"}], "show_optional_core": []}
+        with self.assertRaises(ValueError):
+            validate(self.p)
+        field = {"key": "service_region", "label": "Region", "purpose": "Buyer fit"}
+        self.p["sheet"]["optional_fields"] = [field, field]
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_cannot_expose_operational_columns_through_optional_intake(self):
+        self.p["sheet"] = {"optional_fields": [], "show_optional_core": ["id", "lookup"]}
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
+    def test_legacy_profiles_need_no_sheet_block(self):
+        self.p.pop("sheet", None)
+        validate(self.p)
+
     def test_secret_field(self):
         self.rejects(lambda p: p["business"].update(api_key="not-a-real-secret"))
 

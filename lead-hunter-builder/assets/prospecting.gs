@@ -117,7 +117,7 @@ function importProspectsCsv() {
       if(seen.has(lead.id))continue;
       // Evidence first: a failed lead write can be retried without losing its source.
       upsertEvidence_(s.evidence,evidence);
-      sh.appendRow(LEAD_COLS.map(c=>sheetValue_(lead[c]??(c==='added'?new Date():''))));seen.add(lead.id);count++;
+      appendLeadValues_(sh,sh.getLastRow()+1,[LEAD_COLS.map(c=>sheetValue_(lead[c]??(c==='added'?new Date():'')))]);seen.add(lead.id);count++;
     }
     if(count)formatLeadRows_(sh,LEAD_FIRST_ROW,sh.getLastRow()-LEAD_HEADER_ROW);
     logEvent_({type:'import',source:'cold_prospect',items:items.length,added:count,cost:0,note:'Company fit only; buying intent unconfirmed.'});
@@ -184,8 +184,8 @@ function reconcilePublishedContacts_() {
     if(lead&&(lead.status||'new')==='new'&&lead.email===c.published_email&&confirmRow_(sh,lead)) {
       const fresh=cellFillRow_(leadData_(sh),lead.id);
       if(fresh&&(fresh.status||'new')==='new'&&fresh.email===c.published_email) {
-        sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('email')+1).setValue('');
-        sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('channel')+1).setValue(peopleChannel_({...fresh,email:''}));
+        sh.getRange(leadSheetRow_(fresh._r),leadCol_(sh,'email')).setValue('');
+        sh.getRange(leadSheetRow_(fresh._r),leadCol_(sh,'channel')).setValue(peopleChannel_({...fresh,email:''}));
       }
     }
     tab.getRange(c._r,17).setValue('');
@@ -268,14 +268,17 @@ function verificationResult_(data,email,now) {
 function contactCanPublish_(c,now) {
   return c.identity_status==='confirmed'&&!contactSuppressed_(c)&&c.email_status==='valid'&&c.verified_email===c.email&&!!workEmail_(c.email,c.domain)&&recentContactDate_(c.verified_on,prospectConfig_().contacts.verification_days,now);
 }
-function enrichContact_(contact) {
+function enrichContact_(contact,stillEligible) {
   const cfg=prospectConfig_().contacts,now=new Date();let c={...contact};
   if(contactSuppressed_(c,savedContacts_())||c.identity_status==='rejected')return {...c,note:'Suppressed or rejected; no lookup.'};
   if(contactCanPublish_(c,now))return c;
   if(!professionalDomain_(c.domain)||!c.name)throw new Error('A reviewed name and business domain are needed.');
   if(c.email&&!workEmail_(c.email,c.domain))throw new Error('Existing email is not at the confirmed business domain; review before verification.');
+  if(c.identity_status!=='confirmed')throw new Error('Confirm the current person/company/role in Contacts before finding or verifying email.');
+  if(stillEligible&&!stillEligible())return {...c,note:'Selected contact or linked company changed; no further enrichment.'};
   if(!c.email)c=finderResult_(hunterRequest_('email-finder',{domain:c.domain,full_name:c.name},1),c);
   if(contactSuppressed_(c,savedContacts_()))return {...c,do_not_contact:'yes',note:'Suppressed during lookup; no further enrichment.'};
+  if(stillEligible&&!stillEligible())return {...c,note:'Selected contact or linked company changed during lookup; email retained for review, verifier withheld.'};
   if(c.email&&!['accept_all','invalid','suppressed','identity_mismatch'].includes(c.email_status)&&!(c.email_status==='valid'&&c.verified_email===c.email&&recentContactDate_(c.verified_on,cfg.verification_days,now)))
     Object.assign(c,verificationResult_(hunterRequest_('email-verifier',{email:c.email},.5),c.email,now));
   c.checked_on=now;return c;
@@ -287,13 +290,14 @@ function findWorkContactsSelected() {
   const data=leadData_(sh),selected=selectedCellFields_(data,ranges,r=>sh.isRowHiddenByFilter(r)).map(x=>cellFillRow_(data,x.id));
   if(!selected.length||selected.length>cfg.max_rows_per_run)return ui.alert('Select 1–'+cfg.max_rows_per_run+' leads.');
   if(BUSINESS_CONFIG.mode!=='assisted'||cfg.provider!=='hunter'||cfg.monthly_credits<=0)return ui.alert('Contact research is disabled. Configure your own Hunter account and an explicit credit cap first.');
-  const ready=selected.filter(r=>(r.status||'new')==='new'&&professionalDomain_(r.website)&&typeof r.match_pct==='number'&&r.match_pct>=prospectConfig_().cold_min_fit);
+  const ready=selected.filter(r=>(r.status||'new')==='new'&&websiteIdentityConfirmed_(r)&&professionalDomain_(r.website)&&typeof r.match_pct==='number'&&r.match_pct>=prospectConfig_().cold_min_fit);
   if(!ready.length)return ui.alert('Selected leads need a company website, sufficient fit and new outreach status.');
   if(ui.alert('Find work contacts',ready.length+' companies; up to '+ready.length+' Hunter API credits for one limited domain search each. Results stay unconfirmed until reviewed. No email is sent.',ui.ButtonSet.OK_CANCEL)!==ui.Button.OK)return;
   const tab=contactSheets_().contacts;let existing=contactRows_(tab),done=0;
   const deadline=Date.now()+210000;
   for(const lead of ready) {
     if(Date.now()>deadline)break;
+    const currentLead=cellFillRow_(leadData_(sh),lead.id);if(!currentLead||!websiteIdentityConfirmed_(currentLead)||cellFillHash_(currentLead)!==cellFillHash_(lead))continue;
     const prior=existing.filter(c=>c.lead_id===lead.id),store=PropertiesService.getScriptProperties();
     const cacheKey='LH_CONTACT_DISCOVERY_'+contactSuppressionKey_(professionalDomain_(lead.website)+':'+BUSINESS_CONFIG.decision_roles.join('|')).slice(-64);
     if(contactSuppressed_({domain:professionalDomain_(lead.website),name:''},existing)||prior.some(c=>c.do_not_contact==='yes'))continue;
@@ -328,13 +332,17 @@ function verifyWorkContactsSelected() {
   const ss=SpreadsheetApp.getActive(),ui=SpreadsheetApp.getUi(),sh=ss.getActiveSheet(),cfg=prospectConfig_().contacts;
   if(sh.getName()!=='Contacts')return ui.alert('Select rows in Contacts.');
   const ranges=sh.getActiveRangeList()?.getRanges()||[sh.getActiveRange()],all=contactRows_(sh);
-  const chosen=all.filter(c=>ranges.some(r=>c._r>=r.getRow()&&c._r<=r.getLastRow())&&!sh.isRowHiddenByFilter(c._r));
+  const leads=leadData_(ss.getSheetByName(TABS.leads));
+  const chosen=all.filter(c=>{const lead=cellFillRow_(leads,c.lead_id);return lead&&(lead.status||'new')==='new'&&websiteIdentityConfirmed_(lead)&&professionalDomain_(lead.website)===c.domain&&c.identity_status==='confirmed'&&!contactSuppressed_(c,all)&&ranges.some(r=>c._r>=r.getRow()&&c._r<=r.getLastRow())&&!sh.isRowHiddenByFilter(c._r);});
   if(!chosen.length||chosen.length>cfg.max_rows_per_run)return ui.alert('Select 1–'+cfg.max_rows_per_run+' contacts.');
   if(ui.alert('Find / verify work email','Up to '+chosen.length*1.5+' Hunter credits. Existing fresh valid results are reused. Unknown and catch-all results stay unconfirmed. No email is sent.',ui.ButtonSet.OK_CANCEL)!==ui.Button.OK)return;
   const deadline=Date.now()+210000;
   for(const before of chosen) {
     if(Date.now()>deadline)break;
-    let result;try{result=enrichContact_(before);}catch(e){result={...before,note:redactSecretText_(e.message)};}
+    const currentContacts=contactRows_(sh),current=currentContacts.find(c=>c.contact_id===before.contact_id),lead=cellFillRow_(leadData_(ss.getSheetByName(TABS.leads)),before.lead_id);
+    if(!current||contactSnapshot_(current)!==contactSnapshot_(before)||contactSuppressed_(current,currentContacts)||!lead||(lead.status||'new')!=='new'||!websiteIdentityConfirmed_(lead)||professionalDomain_(lead.website)!==before.domain)continue;
+    const leadSignature=websiteIdentitySignature_(lead),stillEligible=()=>{const all=contactRows_(sh),contact=all.find(c=>c.contact_id===before.contact_id),freshLead=cellFillRow_(leadData_(ss.getSheetByName(TABS.leads)),before.lead_id);return !!(contact&&contactSnapshot_(contact)===contactSnapshot_(before)&&!contactSuppressed_(contact,all)&&freshLead&&(freshLead.status||'new')==='new'&&professionalDomain_(freshLead.website)===before.domain&&websiteIdentityConfirmed_(freshLead)&&websiteIdentitySignature_(freshLead)===leadSignature);};
+    let result;try{result=enrichContact_(before,stillEligible);}catch(e){result={...before,note:redactSecretText_(e.message)};}
     commitContact_(sh,before,result);
   }
   reconcilePublishedContacts_();
@@ -370,8 +378,8 @@ function publishVerifiedContacts() {
     const fresh=cellFillRow_(leadData_(sh),c.lead_id);if(!fresh||cellFillHash_(fresh)!==cellFillHash_(lead))continue;
     const current=contactRows_(tab),currentContact=current.find(v=>v.contact_id===c.contact_id);
     if(!currentContact||contactSnapshot_(currentContact)!==contactSnapshot_(c)||!contactCanPublish_(currentContact)||contactSuppressed_(c,current))continue;
-    sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('email')+1).setValue(sheetValue_(c.email));
-    sh.getRange(leadSheetRow_(fresh._r),LEAD_COLS.indexOf('channel')+1).setValue('Email');done++;
+    sh.getRange(leadSheetRow_(fresh._r),leadCol_(sh,'email')).setValue(sheetValue_(c.email));
+    sh.getRange(leadSheetRow_(fresh._r),leadCol_(sh,'channel')).setValue('Email');done++;
     tab.getRange(currentContact._r,17).setValue(sheetValue_(c.email));
   }
   ss.toast('Copied '+done+' verified work emails to empty Leads email fields. Buying readiness is unchanged.');

@@ -22,6 +22,7 @@ You can also share your business website. The assistant should ask a few relevan
 
 - One Leads workspace with match, readiness, priority and visible progress.
 - Your services and offer, source links and original evidence.
+- Essential fields automatically, hidden working columns, and only the extra service details you choose.
 - Manual imports, optional company/opportunity discovery and work-email finding/verification using your own Hunter account.
 - Cold prospects keep buying readiness Unknown; contact identity and mailbox checks remain separate.
 - Editable budgets and optional Apps Script schedules.

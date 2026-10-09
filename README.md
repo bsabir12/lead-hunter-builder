@@ -17,6 +17,7 @@ Installation does not create a sheet or enable automation. The assistant should 
 ## Features
 
 - Business-specific match and readiness criteria, plus priority out of 100.
+- Essential lead fields appear automatically; working columns stay hidden. Choose only useful service details, such as accounting software, equipment or service radius.
 - Evidence links, original request text, services/offer and visible progress in Leads.
 - Separate demand and cold prospect imports; optional Apify jobs/public-search/Google Maps discovery and typed Jev fit assessments.
 - Own-account Hunter work-contact discovery, named-person email finding and mailbox verification, with source links, current-role review and credit caps.
@@ -45,13 +46,19 @@ Python 3.9+ (standard library and IANA timezone data) and Node.js 18+ run the of
 python3 lead-hunter-builder/scripts/test_builder.py
 python3 lead-hunter-builder/scripts/build.py --profile lead-hunter-builder/assets/profile.example.json --out .build/example
 node lead-hunter-builder/scripts/test_engine.mjs .build/example/Code.gs
+node lead-hunter-builder/scripts/test_contacts.mjs .build/example
 python3 package.py --check
+python3 lead-hunter-builder/scripts/test_portability.py --archive lead-hunter-builder.zip
 ```
 
 Use a new/empty output folder. Build files offline; no credentials or provider calls are needed. [VALIDATION](VALIDATION.md) describes what was checked and what still needs a user's native/live pilot. [Architecture](lead-hunter-builder/references/architecture.md) explains the reusable core.
 
 MIT licensed. Provider APIs and platforms have their own terms and charges.
 
-### 1.2.0 contact options
+### 1.3.0 portable layouts and reliable discovery
 
-Separate email and phone columns preserve existing source handles. The worker automatically checks official public pages for published emails, phones and company social links. If connected and supported, Apollo People Search also runs automatically at zero credits and remembers plan denial. `[Next]` cells name only the remaining owner action or paid tool with its maximum credit cost. Apollo and Hunter use the owner's keys and separate caps (initially 0); paid enrichment is selected-only and confirmed. No outreach is sent.
+Generated sheets have a clean essential view and optional owner-entered service fields. Header mapping preserves values when whole columns move or unrelated fields are added. Saved source text supports resumable identity scanning; partial website/contact checks stay unknown. Manual mode works without connected providers. Source-run selection, durable receipts, fair collection and bounded workers keep optional automation reviewable. See [fields](lead-hunter-builder/references/fields.md) and [validation](VALIDATION.md).
+
+### Contact options
+
+Separate email and phone columns preserve existing source handles. In assisted mode, the worker checks official public pages for published emails, phones and company social links. If connected and supported, Apollo People Search runs at zero credits and remembers plan denial. Partial public checks retry within a three-attempt bound, then request owner review; receipts expire and website changes invalidate them. `[Next]` cells name only the remaining owner action or connected paid tool with its maximum credit cost. Apollo and Hunter use the owner's keys and separate caps (initially 0); paid enrichment is selected-only and confirmed. No outreach is sent.

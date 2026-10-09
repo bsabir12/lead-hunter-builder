@@ -1,4 +1,23 @@
-# Validation history — current release 1.2.0
+# Validation — 1.3.0
+
+Checked on 9 October 2026. Offline checks use fictional data and reject unstubbed networking.
+
+| Check | Result |
+| --- | --- |
+| Profile/generator contracts | 38 passed |
+| Generated Apps Script contracts | 175 passed |
+| Contact/guidance contracts | 36 passed |
+| Cross-service builds | Bookkeeping cold, industrial maintenance mixed and IT security demand passed |
+| Extracted distribution | The same three profiles built and passed engine/contact checks from the ZIP |
+| Public package | 25-file allowlist, sensitive-pattern scan, archive byte parity and SHA-256 |
+
+The added checks cover reordered and extra headers, selected-field preservation, optional fields, priority offsets, original-source retention, late identity clues, durable/resumable scans, invalid reader responses, bounded checkpoint recovery, redirect provenance, partial contact failures, receipt expiry and website changes, owner notes, scoped source starts, collection durability/fairness, worker bounds, manual integration limits, distinct-run cost forecasts and Apollo eligibility after approval. Final review regressions protect owner notes appended below legacy system text, moved guidance columns, progressed leads and parked retries. Fifteen temporary copied-code mutations were detected by their regression assertions, covering the reported guidance, identity, redirect, provider-schema and between-request defects. Additional contracts bind identity receipts to exact company/domain/source evidence, safe commits and expiry; block unverified website hints from public, Hunter, Apollo and legacy Google people work; preserve the reviewed LLM fallback score floor; reject cross-domain homepage redirects; reuse verified homepages and supplied www origins; preserve a safely committed website prerequisite after a later contact outage; gate pending phone polls; reject malformed provider responses; stop unnamed revalidation loops; and recheck eligibility between paid finder and verifier requests.
+
+These checks support configurable engine behavior across services. They do not measure lead coverage, conversion, contact accuracy, live provider access or external bills. Generated optional service fields are owner-entered; there is no claim that the engine extracts those fields automatically. All examples have zero budgets, no enabled sources and no recurring schedule.
+
+All three native Google Sheets fixtures passed on the final generated code on 9 October in a private disposable copied workbook: `testPortableLayoutNative` verified shuffled headers, optional owner fields, selected write masks and actual priority calculation; `testEngineeringHardening` verified chunk storage, interrupted manifest recovery, sorted identities and concurrent owner edits; `testWebsiteIdentityNative` verified synthetic proof persistence after a safe mapped commit, changed-identity invalidation, the reviewed fallback threshold and expiry. The wrapper completed at 18:11:25 UTC with zero provider requests and zero production writes. Fixtures removed their own tabs and properties. Synthetic accepted identity scores do not establish real-world website accuracy. Three synthetic first-user prompts were executed with the previous and current skills, producing six saved responses. No critical failure appeared; optional-field intake and source-preservation guidance were clearer in the current responses. The evaluator knew conditions and compared its own outputs, so this is a limited instruction-adherence check, not a blind study or measured uplift. Each installer must still run native fixtures and review an approved real-provider pilot in their own account. No paid discovery, real-person enrichment, outreach or schedule was run for this upgrade.
+
+# Previous release history — 1.2.0
 
 Checked on 28 September 2026. This is a configurable starter with tested local contracts; native Google Sheets behavior and real contact accuracy still require each installer’s pilot.
 

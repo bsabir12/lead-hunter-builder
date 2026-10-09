@@ -1,6 +1,7 @@
 // Offline behavioral contracts for the generated starter; unstubbed networking fails.
 import fs from 'node:fs';
 import {coldContracts} from './cold_contracts.mjs';
+import {reliabilityContracts} from './reliability_contracts.mjs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -23,7 +24,7 @@ function env(leads=[],patch={}){
  LockService:{getScriptLock:()=>({tryLock:()=>true,waitLock:()=>{},releaseLock:()=>{}})},
  UrlFetchApp:{fetch:()=>{throw Error('Unstubbed network');},fetchAll:()=>{throw Error('Unstubbed network');}},
  ScriptApp:{getProjectTriggers:()=>timers,deleteTrigger:t=>timers.splice(timers.indexOf(t),1),newTrigger:handler=>({timeBased:()=>({everyMinutes:()=>({create:()=>{timers.push({getHandlerFunction:()=>handler});}})})})},SpreadsheetApp:{}};
- vm.createContext(s);vm.runInContext(code.replace(/^const BUSINESS_CONFIG = .*;$/m,'const BUSINESS_CONFIG = '+JSON.stringify(cfg)+';')+'\nthis.T={LEAD_COLS,DEFAULT_SOURCES,DEFAULT_RULES,BUSINESS_CONFIG,PERSON_JEV_ACCEPT};',s);
+ vm.createContext(s);vm.runInContext(code.replace(/^const BUSINESS_CONFIG = .*;$/m,'const BUSINESS_CONFIG = '+JSON.stringify(cfg)+';')+'\nthis.T={LEAD_COLS,DEFAULT_SOURCES,DEFAULT_RULES,BUSINESS_CONFIG,PERSON_JEV_ACCEPT,SITE_JEV_FLOOR};',s);
  const H=Array.from(s.T.LEAD_COLS),mk=o=>H.map(c=>o[c]??''),grid=[H,...leads.map(mk)];
  const sources=[['source','enabled','actor','max_usd','input_json','note']];
  const rules=[['rule','value','meaning'],...plain(s.T.DEFAULT_RULES)];
@@ -34,7 +35,8 @@ function env(leads=[],patch={}){
  s.SpreadsheetApp={getActive:()=>({getSheetByName:n=>sheets[n]||null,toast:()=>{},getSpreadsheetTimeZone:()=>cfg.schedule.timezone}),flush:()=>{}};
  const rawLog=s.logEvent_;s.logEvent_=e=>events.push(e);s.updateForecast_=()=>{};s.refreshProgress_=()=>{};s.spentThisMonth_=()=>0;s.formatLeadRows_=()=>{};
  s.startActor_=(actor,input,cap)=>{starts.push({actor,input,cap});return{id:'run-'+starts.length,defaultDatasetId:'dataset-'+starts.length};};
- return{s,props,store,events,starts,rawLog,timers,grid,sources,rules,sheets,H,cfg,get:(id,c)=>grid.find(r=>r[H.indexOf('id')]===id)?.[H.indexOf(c)],set:(id,c,v)=>{grid.find(r=>r[H.indexOf('id')]===id)[H.indexOf(c)]=v;}};
+ function confirmWebsite(id,p=.99,method='jev'){const row=s.cellFillRow_(s.leadData_(),id);s.markWebsiteIdentity_(row,p,method);assert.equal(s.commitWebsiteIdentity_(sheets.Leads,row),true);assert.equal(s.websiteIdentityConfirmed_(row),true);return row;}
+ return{s,props,store,events,starts,rawLog,timers,grid,sources,rules,sheets,H,cfg,confirmWebsite,get:(id,c)=>grid.find(r=>r[H.indexOf('id')]===id)?.[H.indexOf(c)],set:(id,c,v)=>{grid.find(r=>r[H.indexOf('id')]===id)[H.indexOf(c)]=v;}};
 }
 const fixture={id:'fixture-a',company:'Example Alpha',source:'linkedin_jobs',website:'https://alpha.example',status:'new',next_step:'Message today',channel:'Find contact first',lookup:'done 2026-09-28 · people: google searching'};
 const person={name:'Alice Example',headline:'Operations director',url:'https://www.linkedin.com/in/alice-example',p:.95};
@@ -61,22 +63,24 @@ test('zero budget blocks paid work but permits local calculations',()=>{const e=
 test('pending and queued reservations constrain admission',()=>{const e=env([],assisted);e.rules.push(['monthly_budget_usd',.01,'']);e.props.PENDING=JSON.stringify([{kind:'source',reservedUsd:.009}]);assert.equal(e.s.budgetAllows_(.002,{admission:true}),false);});
 test('raised budget resumes a retained approval',()=>{const e=env();e.s.saveApprovedScoringIds_(['fixture-a']);assert.equal(e.s.budgetAllows_(.001),false);e.rules.push(['monthly_budget_usd',1,'']);assert.equal(e.s.budgetAllows_(.001),true);assert.deepEqual(plain(e.s.approvedScoringIds_()),['fixture-a']);});
 test('source estimate honors a provider minimum cap',()=>{const e=env([],assisted);e.sources.push(['google_jobs',true,'apify/google-search-scraper',.02,'{}','']);const r=e.s.estimates_();assert.equal(r.lines[0].cap,.5);assert.equal(r.capRun,.5);});
+test('forecast groups distinct actual charges, retaining true zero and billed failures',()=>{const e=env(),r=(id,cost,type='run',note='')=>['','',''+type,'google_jobs',id,'','','',cost,'',note];assert.deepEqual(plain(e.s.historicalRunCosts_([r('paid',.2),r('paid',0,'run','actor charge already logged'),r('free',0),r('failed',.1,'error'),r('diagnostic',0,'error')],'google_jobs')),[.2,0,.1]);});
+test('source forecast does not fall after duplicate collection receipts',()=>{const e=env([],assisted);e.sources.push(['google_jobs',true,'apify/google-search-scraper',.5,'{}','']);e.sheets.Log.getDataRange=()=>({getValues:()=>[['header'],['','','run','google_jobs','a','','','',.24,'',''],['','','run','google_jobs','a','','','',0,'','actor charge already logged'],['','','run','google_jobs','b','','','',.26,'','']]});assert.equal(e.s.estimates_().lines[0].est,.25);});
 test('scoring queue chunks round-trip Unicode above native property size',()=>{const e=env();const ids=Array.from({length:350},(_,i)=>'id-'+i+'-会社'.repeat(8));e.s.saveApprovedScoringIds_(ids);assert.deepEqual(plain(e.s.approvedScoringIds_()),ids);for(const value of Object.values(e.props))assert.ok(Buffer.byteLength(value)<=8000);});
 test('failed manifest commit retains the old complete queue',()=>{const e=env();const old=['old'];e.s.saveApprovedScoringIds_(old);const failStore={...e.store,setProperty:(k,v)=>{if(k==='JEV_APPROVED_IDS')throw Error('Injected storage failure');e.store.setProperty(k,v);}};assert.throws(()=>e.s.saveApprovedScoringIds_(Array.from({length:400},(_,i)=>'new-'+i+'x'.repeat(40)),failStore));assert.deepEqual(plain(e.s.approvedScoringIds_()),old);});
 test('missing committed chunk fails closed',()=>{const e=env();e.props.JEV_APPROVED_IDS=JSON.stringify({chunks:['missing']});assert.throws(()=>e.s.approvedScoringIds_(),/missing/);});
 test('failed actor queue save leaves a recoverable paid run',()=>{const e=env([],assisted);const orig=e.store.setProperty;e.store.setProperty=(k,v)=>{if(k==='PENDING')throw Error('Injected storage failure');orig(k,v);};assert.throws(()=>e.s.startTrackedActor_('example/actor',{},.1,{kind:'source',source:'x',reservedUsd:.1}));assert.equal(e.starts.length,1);assert.equal(e.s.pending_()[0].runId,'run-1');});
 test('no durable start intent means no paid request',()=>{const e=env([],assisted);e.store.setProperty=()=>{throw Error('Unavailable storage');};assert.throws(()=>e.s.startTrackedActor_('example/actor',{},.1,{kind:'source'}));assert.equal(e.starts.length,0);});
 test('uncertain paid start prevents blind retries',()=>{const e=env([],assisted);let calls=0;e.s.startActor_=()=>{calls++;throw Error('Transport after submission');};assert.throws(()=>e.s.startTrackedActor_('example/actor',{},.1,{kind:'source'}));assert.throws(()=>e.s.startTrackedActor_('example/actor',{},.1,{kind:'source'}),/uncertain/);assert.equal(calls,1);});
-test('people collection follows lead identity after sorting',()=>{const e=env([fixture,{...fixture,id:'fixture-b',company:'Example Beta'}],assisted);e.s.peopleFromGoogle_=()=>{[e.grid[1],e.grid[2]]=[e.grid[2],e.grid[1]];return[person];};e.s.collectPeople_({leads:['fixture-a']},[],Date.now()+90000);assert.match(e.get('fixture-a','people'),/Alice Example/);assert.equal(e.get('fixture-b','people'),'');});
-test('people collection preserves a concurrent human edit',()=>{const e=env([fixture],assisted);e.s.peopleFromGoogle_=()=>{e.set('fixture-a','people','Owner verified person');return[person];};e.s.collectPeople_({leads:['fixture-a']},[],Date.now()+90000);assert.equal(e.get('fixture-a','people'),'Owner verified person');});
-test('expired deadline retains remaining people instead of none-confirmed',()=>{const e=env([fixture],assisted);e.s.peopleFromGoogle_=()=>{throw Error('Should not start');};const r=e.s.collectPeople_({leads:['fixture-a']},[],Date.now()-1);assert.deepEqual(plain(r.remaining),['fixture-a']);assert.match(e.get('fixture-a','lookup'),/searching/);});
+test('people collection follows lead identity after sorting',()=>{const e=env([fixture,{...fixture,id:'fixture-b',company:'Example Beta'}],assisted);e.confirmWebsite(fixture.id);e.s.peopleFromGoogle_=()=>{[e.grid[1],e.grid[2]]=[e.grid[2],e.grid[1]];return[person];};e.s.collectPeople_({leads:['fixture-a']},[],Date.now()+90000);assert.match(e.get('fixture-a','people'),/Alice Example/);assert.equal(e.get('fixture-b','people'),'');});
+test('people collection preserves a concurrent human edit',()=>{const e=env([fixture],assisted);e.confirmWebsite(fixture.id);e.s.peopleFromGoogle_=()=>{e.set('fixture-a','people','Owner verified person');return[person];};e.s.collectPeople_({leads:['fixture-a']},[],Date.now()+90000);assert.equal(e.get('fixture-a','people'),'Owner verified person');});
+test('expired deadline retains remaining people instead of none-confirmed',()=>{const e=env([fixture],assisted);e.confirmWebsite(fixture.id);e.s.peopleFromGoogle_=()=>{throw Error('Should not start');};const r=e.s.collectPeople_({leads:['fixture-a']},[],Date.now()-1);assert.deepEqual(plain(r.remaining),['fixture-a']);assert.match(e.get('fixture-a','lookup'),/searching/);});
 test('article mentions cannot select LinkedIn DM',()=>{const e=env();const txt=e.s.peopleText_([{...person,web:true,url:'https://www.linkedin.com/posts/example_123?srsltid=tracking'}]);assert.match(txt,/mentioned on:/);assert.equal(e.s.peopleChannel_({people:txt,channel:'LinkedIn DM'}),'Find contact first');});
 test('real profile link can select LinkedIn DM',()=>{const e=env();const txt=e.s.peopleText_([person]);assert.equal(e.s.peopleChannel_({people:txt}),'LinkedIn DM');});
 test('tracking removal preserves functional URL queries',()=>{const e=env();assert.equal(e.s.peopleUrl_('https://example.com/page?item=2&utm_source=test&srsltid=other#section'),'https://example.com/page?item=2#section');});
 test('formula-like source data stays text',()=>{const e=env();for(const v of ['=1+1','+SUM(A1)','-1+2','@SUM(A1)'])assert.ok(e.s.sheetValue_(v).startsWith("'"));});
 test('malformed actor records are counted and logged',()=>{const e=env();const r=e.s.normalise_('linkedin_jobs',[{title:'No identity or URL'}]);assert.equal(r.length,0);assert.ok(e.events.some(x=>x.type==='error'&&x.items===1));});
 test('unsupported source never quietly imports generic JSON',()=>{const e=env();assert.throws(()=>e.s.normaliseRaw_('unknown',[{url:'https://example.com'}]),/Unsupported/);});
-test('manual CSV produces stable IDs and retains original evidence',()=>{const e=env();const rows=[['company','what_they_want','link','posted','notes'],['Example Buyer','A workflow need','https://example.com/need?utm_source=x','2026-09-27','Original source sentence']];const a=e.s.csvLeads_(rows)[0],b=e.s.csvLeads_(rows)[0];assert.equal(a.id,b.id);assert.equal(a.link,'https://example.com/need');assert.equal(a.notes,'post: Original source sentence');});
+test('manual CSV produces stable IDs and retains original evidence',()=>{const e=env();const rows=[['company','what_they_want','link','posted','notes'],['Example Buyer','A workflow need','https://example.com/need?utm_source=x','2026-09-27','Original source sentence']];const a=e.s.csvLeads_(rows)[0],b=e.s.csvLeads_(rows)[0];assert.equal(a.id,b.id);assert.equal(a.link,'https://example.com/need');assert.equal(e.s.sourcePost_(a),'Original source sentence');assert.equal(e.s.sourceIncomplete_(a),false);});
 test('manual import refuses guessed or invalid dates',()=>{const e=env();assert.throws(()=>e.s.csvLeads_([['company','what_they_want','link','posted'],['Example','Need','https://example.com','2026-02-30']]),/date/);});
 test('CSV checks every row before any write',()=>{const e=env();assert.throws(()=>e.s.csvLeads_([['company','what_they_want','link'],['Example','Need','https://example.com'],['Broken','','']]),/row 3/);assert.equal(e.grid.length,1);});
 test('selected match on skipped lead has no unrelated dependencies',()=>{const e=env();const p=e.s.cellFillPlan_({...fixture,next_step:'Skip'},['match_pct']);assert.deepEqual(plain(p.fields),['match_pct']);assert.equal(p.score,true);});
@@ -115,7 +119,7 @@ test('fresh setup and repeated refresh preserve owner data and checkbox choices'
  sheets.Dashboard=sheet('Dashboard');
  const ss={getSheetByName:n=>sheets[n]||null,insertSheet:n=>(sheets[n]=sheet(n)),setActiveSheet:()=>{},moveActiveSheet:()=>{},getSpreadsheetTimeZone:()=>e.cfg.schedule.timezone,toast:()=>{}};
  Object.assign(e.s.SpreadsheetApp,{getActive:()=>ss,newDataValidation:()=>chain,newConditionalFormatRule:()=>chain,InterpolationType:{NUMBER:1},WrapStrategy:{CLIP:1}});
- e.s.setup();assert.ok(sheets['Services & offer']);assert.equal(sheets.Leads.getMaxColumns(),31);assert.deepEqual(plain(sheets.Leads.getRange(2,1,1,31).getValues()[0]),e.H);
+ e.s.setup();assert.ok(sheets['Services & offer']);assert.equal(sheets.Leads.getMaxColumns(),31+(e.cfg.sheet?.optional_fields?.length||0));assert.deepEqual(plain(sheets.Leads.getRange(2,1,1,31).getValues()[0]),e.H);
  sheets.Sources.getRange(2,2).setValue(true);
  const row=e.H.map(c=>c==='id'?'owner-lead':c==='company'?'Owner company':c==='status'?'sent':c==='notes'?'Original note · next: Owner: confirm route':'');
  sheets.Leads.getRange(3,1,1,31).setValues([row]);
@@ -129,6 +133,7 @@ test('supported anonymous identity clue reaches name extraction',()=>{const e=en
 test('assistant to a target decision-maker is not that decision-maker',()=>{const e=env([],{decision_roles:['owner']});assert.equal(e.s.jobPoster_({source:'linkedin_jobs',contact:'Alice Example — Assistant to the owner https://www.linkedin.com/in/alice-example'}),'');});
 
 test('provider keys are redacted and untrusted log text stays literal',()=>{const e=env([],assisted);e.props.APIFY_TOKEN='synthetic-sensitive-value';e.rawLog({type:'error',source:'fixture',note:'=synthetic-sensitive-value'});const cells=e.sheets.Log.getDataRange().getValues().flat().map(String);assert.ok(!cells.some(v=>v.includes('synthetic-sensitive-value')));assert.ok(cells.some(v=>v.startsWith("'=\u005bredacted\u005d")));});
+reliabilityContracts({test,env,assert,plain,fixture,assisted});
 coldContracts({test,env,plain,answers});
 console.log(`\n${passed} passed; ${failed} failed. Offline only; no provider accounts used.`);
 if(failed)process.exitCode=1;

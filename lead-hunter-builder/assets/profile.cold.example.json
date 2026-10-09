@@ -112,5 +112,9 @@
       "cache_days": 30,
       "verification_days": 30
     }
+  },
+  "sheet": {
+    "optional_fields": [],
+    "show_optional_core": []
   }
 }

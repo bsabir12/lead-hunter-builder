@@ -19,3 +19,4 @@ jobs:
       - run: node lead-hunter-builder/scripts/test_engine.mjs .build/example/Code.gs
       - run: node lead-hunter-builder/scripts/test_contacts.mjs .build/example
       - run: python3 package.py --check
+      - run: python3 lead-hunter-builder/scripts/test_portability.py --archive lead-hunter-builder.zip
