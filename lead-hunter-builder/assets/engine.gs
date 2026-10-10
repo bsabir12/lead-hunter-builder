@@ -207,9 +207,12 @@ function readiness_() {
   try{jobs=pending_();}catch(e){issues.push('Pending-run data is invalid; repair Script Properties before continuing.');}
   if(props.getProperty('APIFY_START_RECOVERY'))issues.push('An Apify start needs reconciliation; check Log before another start.');
   const handlers=ScriptApp.getProjectTriggers().map(t=>t.getHandlerFunction());
-  notes.push(handlers.filter(h=>h==='scheduledRun').length+' recurring discovery timer(s); none are installed by Setup.');
+  const sourceTimers=handlers.filter(h=>h==='scheduledRun').length;
+  if(sourceTimers && sourceTimers!==BUSINESS_CONFIG.schedule.days.length)issues.push('Source schedule has an incomplete or unplanned timer set; review the configured days and installed timers.');
+  if(!sourceTimers)notes.push('Source schedule is off; new searches are started manually.');
+  else notes.push(sourceTimers+' recurring discovery timer(s); none are installed by Setup.');
   if(handlers.some(h=>h==='startRuns'))issues.push('Legacy startRuns timer is invalid; change its handler to scheduledRun.');
-  if((jobs.length || waiting || approvedLeft_() || cellFillQueue_().length) && !handlers.includes('worker'))issues.push('Pending work has no worker. Use Collect finished runs now.');
+  if((jobs.length || waiting || approvedLeft_() || cellFillQueue_().length) && !handlers.includes('worker'))issues.push('Pending work has no worker. Review queued work, Log and monthly limits before restarting approved work.');
   const budgets=rules_();
   notes.push('Source schedule uses timezone '+Session.getScriptTimeZone()+'. Google chooses a time within the scheduled hour.');
   notes.push('Monthly limits: total $'+budgets.monthlyBudget+', people search $'+budgets.peopleBudget+'. Zero disables that budget.');
@@ -666,6 +669,7 @@ function progressState_(x) {
     const parts=[x.cells&&`${x.cells} cell updates`,x.jobs&&`${x.jobs} searches`,x.scoring&&`${x.scoring} to score`,(x.lookups+x.people)&&`${x.lookups+x.people} lookups queued`,x.freeContacts&&`${x.freeContacts} free contact checks`].filter(Boolean);
     if(x.paused)parts.push(`${x.paused} paused`);
     if(issues || x.meta.workerError)parts.push('some errors; see Log');
+    if(!x.meta.starting && x.worker==null)return {label:'Queued',detail:parts.concat('check system status to confirm the worker').join(' · '),active:false};
     return {label:'Working',detail:parts.join(' · ')||'starting searches',active:true};
   }
   if(x.paused || x.meta.blocked)return {label:'Paused',detail:(x.meta.blocked||`${x.paused} leads reached a monthly lookup limit`)+(issues?' · errors also need review':''),active:false};
@@ -1728,7 +1732,13 @@ function brandWindows_(text){
 /** Original source only: inferred company, prior guidance and owner notes are not scan evidence. */
 function sourcePost_(row){
  const notes=String(row.notes||''),m=notes.match(/(?:^|\n)post: ([\s\S]*)/);
- if(!m)return '';const marker=m[1].search(/\n\[LH source v1: (?:captured|truncated); characters \d+\]/);return marker<0?m[1]:m[1].slice(0,marker);
+ if(!m)return '';const marker=m[1].search(/\r?\n\[LH source v1: (?:captured|truncated); characters \d+\]/);
+ if(marker>=0)return m[1].slice(0,marker);
+ // Legacy Upwork intake used cut(description, n), which collapsed every
+ // whitespace run before saving. A later line is an appended note, not source.
+ // Other providers (notably X) retained genuine multiline source paragraphs.
+ // legacyRow_ also appended its next_action using this literal delimiter.
+ return isUpwork_(row.source)?m[1].split(/[\r\n]| · next: /,1)[0]:m[1];
 }
 function sourceNotes_(text){
  const t=String(text||'').replace(/\s+/g,' ').trim();
@@ -1737,7 +1747,7 @@ function sourceNotes_(text){
 function brandScanText_(row){return (sourcePost_(row)?[row.what_they_want,sourcePost_(row)].filter(Boolean).join(' '):String(row._text||'')).replace(/\s+/g,' ').trim();}
 function sourceIncomplete_(row){
  const post=sourcePost_(row);
- return /\[LH source v1: truncated;/.test(String(row.notes||''))||(!/\[LH source v1: captured;/.test(String(row.notes||''))&&[3000,6000,20000].includes(post.length));
+ return /\[LH source v1: truncated;/.test(String(row.notes||''))||(!/\[LH source v1: captured;/.test(String(row.notes||''))&&([3000,6000,20000].includes(post.length)||(isUpwork_(row.source)&&post.length===600)));
 }
 function discoveryHash_(text){return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,String(text),Utilities.Charset.UTF_8).map(b=>('0'+((b+256)%256).toString(16)).slice(-2)).join('');}
 function brandScanKey_(row){return row.id?'LH_BRAND_SCAN_'+discoveryHash_(String(row.id)).slice(0,32):'';}
@@ -2068,22 +2078,34 @@ function jevSiteScores_(row, cands, deadline, usage) {
 }
 
 
+function siteJudgePost_(row){
+ const source=String(sourcePost_(row)||row._text||'').normalize('NFKC'),name=String(row.company||'').normalize('NFKC').trim();
+ const at=name?source.toLowerCase().indexOf(name.toLowerCase()):-1;
+ const excerpt=row._brandEvidence||(at>=0?source.slice(Math.max(0,at-180),at+1200):source.slice(0,1000));
+ return [row.what_they_want,excerpt,at>1000?source.slice(0,400):''].filter(Boolean).join('\n').replace(/\s+/g,' ').slice(0,2000);
+}
+
 function pickSite_(row, cands, scores, deadline, usage) {
   if (!cands.length) return null;
-  let best = -1;
   scores=scores.map(p=>validProbability_(p)?p:null);
+  let best = -1;
   scores.forEach((p, i) => { if (p !== null && (best < 0 || p > scores[best])) best = i; });
   const runnerUp = Math.max(-1, ...scores.filter((p, i) => i !== best && p !== null));
   const clearWin = best >= 0 && scores[best] - runnerUp >= SITE_JEV_MARGIN;
-  if (best >= 0 && scores[best] >= SITE_JEV_ACCEPT && clearWin) return { host: cands[best].host, ev: cands[best].ev, by: 'jev', p: scores[best] };
+  if (best >= 0 && scores[best] >= SITE_JEV_ACCEPT && clearWin && cands.every(c=>c.ev) && scores.every(p=>p!==null)) return { host: cands[best].host, ev: cands[best].ev, by: 'jev', p: scores[best] };
+  if(cands.some(c=>!c.ev)||scores.length!==cands.length||scores.some(p=>!Number.isFinite(p)||p<0||p>1))return null;
+  if(!scores.some((p,k)=>p>=SITE_JEV_FLOOR&&scores.every((other,i)=>i===k||p-other>=SITE_JEV_MARGIN)))return null;
+  if(deadline&&Date.now()>deadline-5000){usage.siteFailed=true;return null;}
   const list = cands.map((c, i) => `${i + 1}. ${c.host}\n   homepage: ${c.ev ? (c.ev.title + ' — ' + (c.ev.description || '') + ' — ' + c.ev.text.slice(0, 200)).replace(/\s+/g, ' ') : '(could not load)'}\n   search: ${c.snippet || '(not in search results)'}`).join('\n');
-  const post = [row._brandEvidence,sourcePost_(row)||row._text||row.what_they_want].filter(Boolean).join(' ').replace(/\s+/g,' ').slice(0,4000);
+  const post = siteJudgePost_(row);
   const r = llmAsk_(SITE_JUDGE_PROMPT, `Business: ${row.company}\n\nJob post:\n${post}\n\nCandidates:\n${list}`, deadline, usage);
-  if (r.error || /\bnone\b/i.test(r.text || '')) return null;
-  const n = Number(((r.text || '').match(/\d+/) || [])[0]);
-  if (!(n >= 1 && n <= cands.length)) return null;
+  if(r.error){usage.siteFailed=true;return null;}
+  const reply=String(r.text||'').trim();if(/^NONE$/i.test(reply))return null;
+  const n = /^[1-9]\d*$/.test(reply)?Number(reply):NaN;
+  if (!(n >= 1 && n <= cands.length)){usage.siteFailed=true;return null;}
   const k = n - 1;
-  if (scores[k] === null || scores[k] < SITE_JEV_FLOOR || cands.some(c => !c.ev) || scores.some((p, i) => i !== k && p !== null && scores[k] - p < SITE_JEV_MARGIN)) return null;
+  // A readable candidate, accepted score floor and clear margin are all required.
+  if (scores[k] === null || scores[k] < SITE_JEV_FLOOR || cands.some(c => !c.ev) || scores.some(p=>p===null) || scores.some((p, i) => i !== k && p !== null && scores[k] - p < SITE_JEV_MARGIN)) return null;
   return { host: cands[k].host, ev: cands[k].ev, by: 'llm', p: scores[k] };
 }
 const ROLE_SEARCH = {configured:BUSINESS_CONFIG.decision_roles.join(' '),unclear:BUSINESS_CONFIG.decision_roles.join(' ')};
@@ -2544,19 +2566,6 @@ function lookupRow_(row, deadline, usage, options) {
   const trail = [];
   const today = Utilities.formatDate(new Date(), 'UTC', 'yyyy-MM-dd');
   let siteEv = row._site || null;
-  if (wantSite && siteUrl_(row.website) && !websiteIdentityConfirmed_(row)) {
-    const host = hostOf_(row.website);
-    const pages=publicContactPages_([siteUrl_(row.website).replace(/^http:/i,'https:').replace(/^(https:\/\/[^/]+).*/,'$1')],host,deadline);
-    let ev = null;
-    try { const readable=pages.length&&!pages.incomplete?siteEvidence_(pages[0].html):null;ev=readable?{...readable,source_url:pages[0].url}:null; } catch (e) { ev = null; }
-    const p = ev ? jevSiteScores_(row, [{ host, ev }], deadline, r)[0] : null;
-    if (p !== null && p >= SITE_JEV_ACCEPT) { siteEv = ev; row._site = ev;row._websitePages=pages;markWebsiteIdentity_(row,p); trail.push(`site verified from post: ${host} (jev ${p.toFixed(2)})`); }
-    else if(!ev||p===null){r.siteFailed=true;trail.push('site check unavailable; existing source website retained');return finishLookup_(row,u,r,trail,retries,today,'');}
-    else {
-      trail.push(`site rejected from post: ${host} (${p === null ? 'unreadable' : 'jev ' + p.toFixed(2)})`);
-      r.identityMismatch=true;return finishLookup_(row,u,r,trail,retries,today,'website identity mismatch; review the supplied URL');
-    }
-  }
   if(placeholderName_(row.company)&&((selected&&want('company'))||(!selected&&LOOKUP_STEPS.includes(row.next_step))))row.company='';
   if (!row.company && ((selected&&want('company')) || /business identity needs lookup/.test(String(row.lookup||'')) || /brand clue in post/.test(String(row.why || '')) || brandScanContinuing_(row) || (!selected&&LOOKUP_STEPS.includes(row.next_step)))) {
     const b = findBrands_([Object.assign(row, { _clue: true })], deadline);
@@ -2569,6 +2578,21 @@ function lookupRow_(row, deadline, usage, options) {
   }
   if (!row.company || placeholderName_(row.company)) return finishLookup_(row, u, r, trail, retries, today, row.company ? 'no business name (only a description)' : row._brandScan?.status==='exhausted'?(sourceIncomplete_(row)?'saved source incomplete; recover original post':'no business name in fully scanned saved source'):'identity check incomplete');
   if(row._websiteVerified)markWebsiteIdentity_(row,row._websiteVerified.p,row._websiteVerified.method);
+
+  if (wantSite && siteUrl_(row.website) && !websiteIdentityConfirmed_(row)) {
+    const host = hostOf_(row.website);
+    const pages=publicContactPages_([siteUrl_(row.website).replace(/^http:/i,'https:').replace(/^(https:\/\/[^/]+).*/,'$1')],host,deadline);
+    let ev = null;
+    try { const readable=pages.length&&!pages.incomplete?siteEvidence_(pages[0].html):null;ev=readable?{...readable,source_url:pages[0].url}:null; } catch (e) { ev = null; }
+    const candidates=[{host,ev,snippet:''}],p = ev ? jevSiteScores_(row, candidates, deadline, r)[0] : null;
+    const reviewed=p!==null&&p>=SITE_JEV_FLOOR&&p<SITE_JEV_ACCEPT?pickSite_(row,candidates,[p],deadline,r):null;
+    if (p !== null && (p >= SITE_JEV_ACCEPT || reviewed?.host===host)) { siteEv = ev; row._site = ev;row._websitePages=pages;markWebsiteIdentity_(row,p,reviewed?'jev_llm':'jev'); trail.push(`site verified from post: ${host} (${reviewed?'llm, jev':'jev'} ${p.toFixed(2)})`); }
+    else if(!ev||p===null||r.siteFailed){r.siteFailed=true;trail.push('site check unavailable; existing source website retained');return finishLookup_(row,u,r,trail,retries,today,'');}
+    else {
+      trail.push(`site rejected from post: ${host} (${p === null ? 'unreadable' : 'jev ' + p.toFixed(2)})`);
+      r.identityMismatch=true;return finishLookup_(row,u,r,trail,retries,today,'website identity mismatch; review the supplied URL');
+    }
+  }
 
   if(!wantSite)return finishLookup_(row,u,r,trail,retries,today,'');
   if (!siteUrl_(row.website)) {

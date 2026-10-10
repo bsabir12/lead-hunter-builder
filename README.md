@@ -55,6 +55,10 @@ Use a new/empty output folder. Build files offline; no credentials or provider c
 
 MIT licensed. Provider APIs and platforms have their own terms and charges.
 
+### 1.3.1 consistent supplied website checks
+
+Supplied websites use the same bounded independent review as discovered sites at the existing score thresholds. Readable evidence, an exact choice and the original host are required; unavailable checks stay incomplete. Legacy source boundaries keep owner notes out of identity evidence. Status checks distinguish queued work with unknown worker permissions and intentional manual schedules.
+
 ### 1.3.0 portable layouts and reliable discovery
 
 Generated sheets have a clean essential view and optional owner-entered service fields. Header mapping preserves values when whole columns move or unrelated fields are added. Saved source text supports resumable identity scanning; partial website/contact checks stay unknown. Manual mode works without connected providers. Source-run selection, durable receipts, fair collection and bounded workers keep optional automation reviewable. See [fields](lead-hunter-builder/references/fields.md) and [validation](VALIDATION.md).

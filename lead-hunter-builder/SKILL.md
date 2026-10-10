@@ -2,7 +2,7 @@
 name: lead-hunter-builder
 description: "Build a personalized lead hunting Google Sheet for a business, freelancer or team. Use when someone wants a lead tracker, cold prospect list, company discovery, professional-contact research, fit scoring, priorities, budgets and recurring searches, or wants to adapt that workflow to an existing sheet. Interviews beginners, generates a configurable Apps Script starter, and guides setup and validation. Not for merely writing outreach, buying lead lists or sending messages."
 metadata:
-  version: "1.3.0"
+  version: "1.3.1"
 ---
 
 # Lead Hunter Builder
@@ -50,7 +50,7 @@ For contact enrichment read [contact-providers.md](references/contact-providers.
 
 Choose the cheapest adequate path: qualify companies first, let the worker inspect public business sources, reuse fresh results, then use a bounded provider lookup. Hunter and Apollo are implemented adapters; Prospeo and Snov remain researched alternatives. `[Working]` is internal automatic work. `[Next]` must name only the remaining owner action or paid tool and its maximum credit cost. Test prerequisites and endpoint access before recommending a tool. Recommend another provider only when a segment pilot shows worthwhile additional coverage. Explain remaining identity review and unsupported integrations; do not imply fully autonomous contact verification.
 
-Preserve the complete captured source up to the documented cell limit, flag larger or known historical truncations, and resume identity scans from their saved cursor. A negative result is valid only after all saved source windows were checked. Missing reader connections, unreadable websites, blocked contact pages and deadlines remain incomplete/error states. Do not remove a supplied website merely because its verification failed. An unverified source hint cannot authorize scraping contacts from that site.
+Preserve the complete captured source up to the documented cell limit, flag larger or known historical truncations, and resume identity scans from their saved cursor. A negative result is valid only after all saved source windows were checked. Missing reader connections, unreadable websites, blocked contact pages and deadlines remain incomplete/error states. Do not remove a supplied website merely because its verification failed. An unverified source hint cannot authorize scraping contacts from that site. Supplied and discovered sites use the same identity policy: a readable homepage and clear Jev result, or an exact independent website choice above the existing Jev floor. A fallback reply can select only the supplied host; malformed or unavailable judgments remain incomplete.
 
 ## Connect and prove it
 

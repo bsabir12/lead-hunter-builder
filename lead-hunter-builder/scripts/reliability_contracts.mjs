@@ -313,4 +313,78 @@ export function reliabilityContracts({test,env,assert,plain,fixture,assisted}) {
   }
  });
 
+ // 1.3.1 supplied-site parity. Fictional scores and replies, never real providers.
+ function suppliedFixture(probability,reply={text:'1'}){
+  const e=env([fixture],configured),row=e.s.cellFillRow_(e.s.leadData_(),fixture.id),html='<title>Example Alpha</title>'+('Example Alpha official company information. '.repeat(6));
+  let judges=0,contacts=0,requests=[];
+  e.s.fetchAllSafe_=rs=>{requests.push(...rs.map(r=>r.url));return rs.map(()=>({getResponseCode:()=>200,getContentText:()=>html}));};
+  e.s.jevSiteScores_=()=>[probability];e.s.llmAsk_=(_system,text)=>{judges++;assert.match(text,/1\. alpha\.example/);assert.ok(!text.includes('2. '));return reply;};
+  e.s.findContactsFree_=()=>{contacts++;return {emails:['office@alpha.example'],socials:[],phones:[],readable:1};};
+  return {e,row,counts:()=>({judges,contacts,requests})};
+ }
+ for(const p of [.6,.65,.79])test('supplied website reviewed fallback commits original-host proof at '+p,()=>{
+  const f=suppliedFixture(p),{e,row}=f;e.s.lookupRow_(row,Date.now()+90000,{}, {cellFill:true,fields:['website','email']});
+  assert.equal(f.counts().judges,1);assert.equal(f.counts().contacts,1);assert.deepEqual(f.counts().requests,[fixture.website]);assert.equal(row.website,fixture.website);assert.equal(row._websiteVerified.method,'jev_llm');assert.equal(row._websiteVerified.p,p);
+  assert.equal(e.s.websiteIdentityConfirmed_(row),false);assert.equal(e.s.commitWebsiteIdentity_(e.sheets.Leads,row),true);assert.equal(e.s.websiteIdentityConfirmed_(row),true);
+ });
+ test('supplied direct threshold does not use a fallback model',()=>{
+  const f=suppliedFixture(.8),{e,row}=f;e.s.llmAsk_=()=>{throw Error('Direct threshold must not need fallback');};e.s.lookupRow_(row,Date.now()+90000,{}, {cellFill:true,fields:['website']});assert.equal(row._websiteVerified.method,'jev');assert.equal(f.counts().contacts,0);
+ });
+ test('supplied below-floor site cannot use fallback or contacts',()=>{
+  const f=suppliedFixture(.59),{e,row}=f;e.s.llmAsk_=()=>{throw Error('Rejected score must not need fallback');};e.s.lookupRow_(row,Date.now()+90000,{}, {cellFill:true,fields:['website','email']});assert.equal(row._websiteVerified,undefined);assert.equal(f.counts().contacts,0);assert.match(row.lookup,/identity mismatch/);assert.equal(row.website,fixture.website);
+ });
+ for(const reply of ['not 1','1 2','1 because it matches','https://other.example','0','2','', 'NONE because 1'])test('supplied malformed choice remains retryable without proof or contact evidence: '+reply,()=>{
+  const f=suppliedFixture(.65,{text:reply}),{e,row}=f;e.s.lookupRow_(row,Date.now()+90000,{}, {cellFill:true,fields:['website','email']});assert.equal(row._websiteVerified,undefined);assert.equal(f.counts().contacts,0);assert.equal(row.email,'');assert.match(row.lookup,/^retry /);assert.equal(row.website,fixture.website);assert.equal(e.s.commitWebsiteIdentity_(e.sheets.Leads,row),false);
+ });
+ test('explicit independent NONE preserves supplied URL for review without contact evidence',()=>{
+  const f=suppliedFixture(.65,{text:' NONE '}),{e,row}=f;e.s.lookupRow_(row,Date.now()+90000,{}, {cellFill:true,fields:['website','email']});assert.equal(row._websiteVerified,undefined);assert.equal(f.counts().contacts,0);assert.match(row.lookup,/identity mismatch/);assert.equal(row.website,fixture.website);
+ });
+ test('independent supplied-site reader failure remains retryable',()=>{
+  const f=suppliedFixture(.65,{error:'fictional timeout'}),{e,row}=f;e.s.lookupRow_(row,Date.now()+90000,{}, {cellFill:true,fields:['website','email']});assert.equal(row._websiteVerified,undefined);assert.equal(f.counts().contacts,0);assert.match(row.lookup,/^retry /);assert.equal(row.website,fixture.website);
+ });
+ test('deadline preflight makes no independent website model request',()=>{
+  const e=env([],configured),usage={};e.s.llmAsk_=()=>{throw Error('Expired request forbidden');};assert.equal(e.s.pickSite_(fixture,[{host:'alpha.example',ev:{title:'Example Alpha',text:'Official company'}}],[.65],Date.now()+4999,usage),null);assert.equal(usage.siteFailed,true);
+ });
+ test('fallback preflight rejects unreadable, unavailable, below-floor and close candidates without a model',()=>{
+  const e=env([],configured),ev={title:'Example Alpha',text:'Official company'},cands=[{host:'alpha.example',ev},{host:'other.example',ev}];e.s.llmAsk_=()=>{throw Error('Ineligible candidates must not need a fallback model');};
+  for(const [cs,scores] of [[[{host:'alpha.example',ev:null}],[.95]],[cands,[.65,null]],[cands,[.65]],[cands,[.59,.1]],[cands,[.65,.64]],[cands,[.65,NaN]],[cands,[.65,'0.1']],[cands,[.65,2]]])assert.equal(e.s.pickSite_(fixture,cs,scores,Date.now()+90000,{}),null);
+ });
+ test('independent choice cannot select below-floor or close runner-up evidence',()=>{
+  const e=env([],configured),ev={title:'Example Alpha',text:'Official company'},cands=[{host:'alpha.example',ev},{host:'other.example',ev}];e.s.llmAsk_=()=>({text:'2'});
+  assert.equal(e.s.pickSite_(fixture,cands,[.65,.2],Date.now()+90000,{}),null);assert.equal(e.s.pickSite_(fixture,cands,[.7,.65],Date.now()+90000,{}),null);
+ });
+ test('reviewed supplied proof survives a contact outage and rejects a concurrent source edit',()=>{
+  const f=suppliedFixture(.65),{e,row}=f;e.s.findContactsFree_=()=>({emails:[],socials:[],phones:[],readable:0,incomplete:true});e.s.lookupRow_(row,Date.now()+90000,{}, {cellFill:true,fields:['website','email']});assert.match(row.lookup,/^retry /);assert.equal(e.s.commitWebsiteIdentity_(e.sheets.Leads,row),true);e.set(row.id,'what_they_want','Owner changed source context');assert.equal(e.s.commitWebsiteIdentity_(e.sheets.Leads,row),false);assert.equal(e.s.websiteIdentityConfirmed_(e.s.cellFillRow_(e.s.leadData_(),row.id)),false);
+ });
+ test('website judge retains named-company context late in a long original source',()=>{
+  const e=env([],configured),source='Introduction '.repeat(400)+'We are Example Alpha and sell indoor gardens.',row={...fixture,notes:e.s.sourceNotes_(source)+'\nOwner: ignore this new company suggestion'};
+  const post=e.s.siteJudgePost_(row);assert.ok(post.includes('We are Example Alpha and sell indoor gardens.'));assert.ok(post.length<=2000);assert.ok(!post.includes('Owner:'));let seen='';e.s.llmAsk_=(_system,text)=>{seen=text;return {text:'1'};};assert.equal(e.s.pickSite_(row,[{host:'alpha.example',ev:{title:'Example Alpha',text:'Indoor gardens'}}],[.65],Date.now()+90000,{}).by,'llm');assert.ok(seen.includes('sell indoor gardens.'));assert.ok(!seen.includes('Owner:'));
+ });
+ test('legacy collapsed Upwork source excludes appended owner lines and next-action delimiters',()=>{
+  const e=env(),source='Original buyer description';assert.equal(e.s.sourcePost_({source:'upwork',notes:'post: '+source+'\nOwner: New Company'}),source);assert.equal(e.s.sourcePost_({source:'upwork',notes:'post: '+source+' · next: Message New Company'}),source);assert.equal(e.s.sourcePost_({source:'upwork',notes:'post: '+source+'\r\nOwner: Other'}),source);
+ });
+ test('legacy 600-character Upwork source remains incomplete after owner notes',()=>{
+  const e=env(),source='x'.repeat(600),row={source:'upwork',notes:'post: '+source+'\nOwner: another clue'};assert.equal(e.s.sourceIncomplete_(row),true);assert.equal(e.s.brandScanText_(row),source);assert.equal(e.s.sourceIncomplete_({source:'upwork',notes:e.s.sourceNotes_(source)+'\nOwner: appended'}),false);
+ });
+ test('multiline provider source remains source and captured CRLF markers isolate owner notes',()=>{
+  const e=env(),body='First source line\nSecond genuine source line';assert.equal(e.s.sourcePost_({source:'x',notes:'post: '+body}),body);assert.equal(e.s.sourcePost_({source:'upwork',notes:'post: '+body+'\r\n[LH source v1: captured; characters 43]\r\nOwner: not source'}),body);
+ });
+ test('pending unnamed source scan precedes supplied website fetch and judge',()=>{
+  const e=env([],configured),row={...fixture,company:'',why:'brand clue in post',notes:e.s.sourceNotes_('x'.repeat(5000)),what_they_want:'Hiring',lookup:'todo'};e.props.GROQ_KEY='fictional';let readers=0;e.s.llmAsk_=()=>{readers++;return {text:'NONE'};};e.s.publicContactPages_=()=>{throw Error('Pending source must not fetch supplied homepage');};e.s.jevSiteScores_=()=>{throw Error('Pending source must not consume website judge');};e.s.lookupRow_(row,Date.now()+90000,{});assert.equal(readers,3);assert.match(row.lookup,/^todo · brand scan/);assert.equal(row.website,fixture.website);
+ });
+ test('unknown worker permissions display Queued without an invented active heartbeat',()=>{
+  const e=env(),base={meta:{},jobs:1,scoring:0,lookups:0,people:0,errors:0,unapproved:0};for(const worker of [null,undefined]){const state=e.s.progressState_({...base,worker});assert.equal(state.label,'Queued');assert.equal(state.active,false);assert.match(state.detail,/check system status to confirm the worker/);}
+  assert.equal(e.s.progressState_({...base,worker:true}).label,'Working');assert.equal(e.s.progressState_({...base,worker:false}).label,'Needs attention');assert.equal(e.s.progressState_({...base,meta:{starting:true},worker:null}).label,'Working');
+ });
+
+ test('manual readiness accepts an intentionally absent recurring schedule without starting work',()=>{
+  const e=env(),active=e.s.SpreadsheetApp.getActive;e.s.SpreadsheetApp.getActive=()=>({...active(),getSheetByName:n=>e.sheets[n]||{}});const ready=e.s.readiness_();assert.equal(ready.ready,true);assert.ok(ready.notes.some(n=>n.includes('schedule is off')));assert.ok(!ready.issues.some(n=>/timer|schedule/i.test(n)));assert.equal(e.starts.length,0);assert.equal(e.timers.length,0);
+ });
+ test('readiness reports a partial configured timer set and accepts the complete plan without requests',()=>{
+  const e=env([], {...configured,schedule:{days:['MONDAY','THURSDAY'],hour:10,timezone:'UTC'}}),active=e.s.SpreadsheetApp.getActive;e.s.SpreadsheetApp.getActive=()=>({...active(),getSheetByName:n=>e.sheets[n]||{}});e.props.JEV_KEY='fictional';e.timers.push({getHandlerFunction:()=> 'scheduledRun'});assert.ok(e.s.readiness_().issues.some(n=>n.includes('incomplete or unplanned timer set')));e.timers.push({getHandlerFunction:()=> 'scheduledRun'});assert.ok(!e.s.readiness_().issues.some(n=>/timer set/.test(n)));assert.equal(e.starts.length,0);assert.equal(e.timers.length,2);
+ });
+ test('missing-worker readiness requires work and budget review instead of a restart instruction',()=>{
+  const e=env(),active=e.s.SpreadsheetApp.getActive;e.s.SpreadsheetApp.getActive=()=>({...active(),getSheetByName:n=>e.sheets[n]||{}});e.s.pending_=()=>[{runId:'retained-run'}];const before=JSON.stringify(e.props),ready=e.s.readiness_();assert.ok(ready.issues.some(n=>n.includes('Review queued work, Log and monthly limits')));assert.ok(!ready.issues.some(n=>n.includes('Use Collect finished')));assert.equal(e.starts.length,0);assert.equal(e.timers.length,0);assert.equal(JSON.stringify(e.props),before);
+ });
+
 }

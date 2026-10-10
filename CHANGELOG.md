@@ -1,3 +1,11 @@
+# 1.3.1 — 2026-10-10
+
+Supplied website hints now receive the same independent LLM-plus-Jev review as discovered candidates, at unchanged direct and fallback thresholds. Review can choose only the original host, uses readable homepage and source context, and accepts only a numeric candidate or explicit `NONE`. Errors, malformed replies and deadlines remain incomplete. Original URLs are preserved.
+
+Legacy collapsed Upwork source excludes appended owner notes and next-action text; historical 600-character captures stay incomplete. Long source excerpts retain the named company’s context. Unknown worker permissions display Queued, and system status accepts schedules intentionally off while flagging incomplete configured timer sets. Missing workers require work and budget review before restart.
+
+38 builder, 203 engine and 36 contact checks pass offline. Twenty-eight additional contracts cover these behaviors with fictional evidence and no provider calls. All six source/extracted service builds and package privacy/parity pass; twenty-two copied defect controls were detected. All three native fixtures passed on the exact v1.3.1 generated code at 04:24:22 UTC on 10 October, with zero provider requests and zero production writes. Synthetic identity checks do not establish real-world accuracy. Version 1.3.0 was already published at commit `ac4d2a3`; its historical validation remains below.
+
 # 1.3.0 — 2026-10-09
 
 Essential fields are included automatically with operational columns hidden. Optional service fields come from intake, stay owner-entered, and are added without discarding existing data. Header-based reads, writes, selections and formulas support whole-column moves and unrelated columns.
