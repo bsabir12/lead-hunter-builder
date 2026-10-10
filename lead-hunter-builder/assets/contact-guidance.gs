@@ -16,10 +16,11 @@ function contactGuidance_(row,field,contacts){
   const capabilities=contactGuidanceCapabilities_(),owner=()=>next('Review official company page or contact record · owner review');
   if(String(row.status||'new').trim().toLowerCase()!=='new')return next(field==='email'?'Review work email in existing conversation · owner review':field==='phone'?'Review phone in existing conversation · owner review':'Review current company and contact in existing conversation · owner review');
   if(row._leadWebsiteUnconfirmed||row.id&&!row._websiteConfirmed)return capabilities.automaticPublic?next('Confirm website identity via Fill selected cells · owner review'):next('Confirm official company website and contacts · owner review');
+  if((row.contact_id||row.name)&&!row._identityConfirmed)return next('Confirm selected identity evidence in Contacts · owner review');
   if(row._publicFailed)return next('Public pages incomplete · review website or retry selected free check · owner review');
   if(row._publicRetry)return capabilities.automaticPublic?working('Public pages incomplete · retry queued'):owner();
   if(field==='phone'){
-    if(row.pending_request_id&&row.identity_status!=='confirmed')return next('Confirm current person company and role in Contacts · owner review');
+    if(row.pending_request_id&&!row._identityConfirmed)return next('Confirm current person company and role in Contacts · owner review');
     if(row.pending_request_id&&capabilities.automaticPublic)return working('Apollo phone result · automatic');
     if(row.id&&!row._publicChecked&&capabilities.automaticPublic)return working('Public pages · automatic');
     if(capabilities.apollo&&(row.provider_person_id||candidates.some(c=>c.provider_person_id)))return next('Apollo Person Phone · up to 9 credits/person');
@@ -28,8 +29,8 @@ function contactGuidance_(row,field,contacts){
   if(field==='email'){
     if(row.id&&!row._publicChecked&&capabilities.automaticPublic)return working('Public pages · automatic');
     if(capabilities.apollo&&(row.provider_person_id||candidates.some(c=>c.provider_person_id)))return next('Apollo Work Email · up to 1 credit/person');
-    if(capabilities.hunter&&row.identity_status==='confirmed'&&row.name)return next('Hunter Email Finder + Verifier · up to 1.5 credits/person');
-    if(capabilities.hunter&&candidates.some(c=>c.identity_status==='confirmed'))return next('Hunter Email Finder + Verifier · up to 1.5 credits/person');
+    if(capabilities.hunter&&row._identityConfirmed&&row.name)return next('Hunter Email Finder + Verifier · up to 1.5 credits/person');
+    if(capabilities.hunter&&candidates.some(c=>contactIdentityConfirmed_(c)))return next('Hunter Email Finder + Verifier · up to 1.5 credits/person');
     if(capabilities.automaticPublic&&row._publicChecked&&['unknown','available'].includes(row._apolloSearchState))return working('Apollo People Search · automatic');
     return capabilities.hunter?next('Hunter Domain Search · up to 1 credit/company'):owner();
   }
@@ -92,7 +93,7 @@ function refreshContactGuidance_(){
   if(tab){const cc=Object.fromEntries(['email','linkedin','phone'].map(c=>[c,[]])),rawContacts=tab.getDataRange().getValues(),linkedLeads=new Map(data.slice(1).map(values=>{const lead=Object.fromEntries(LEAD_COLS.map((c,k)=>[c,values[k]]));return [String(lead.id),{...lead,confirmed:websiteIdentityConfirmed_(lead)}];}));
     contacts.forEach(c=>['email','linkedin','phone'].forEach(k=>{const old=rawContacts[c._r-1]?.[CONTACT_COLS.indexOf(k)]??'';if(old&&!/^\[(?:Next|Working)\] /.test(String(old)))return;
       const blocked=typeof contactSuppressed_==='function'&&contactSuppressed_(c,contacts);
-      const linked=linkedLeads.get(String(c.lead_id)),value=c[k]||contactGuidance_({...c,status:linked?.status||'new',_linkedLeadMissing:!linked,_contactDomainMismatch:!!linked&&professionalDomain_(linked.website)!==c.domain,_leadWebsiteUnconfirmed:!linked?.confirmed,...(blocked?{do_not_contact:'yes'}:{})},k,[]);if(String(old)!==value){cc[k].push({row:c._r,id:c.contact_id,expected:old,value,field:k});changed++;}}));
+      const linked=linkedLeads.get(String(c.lead_id)),value=c[k]||contactGuidance_({...c,status:linked?.status||'new',_linkedLeadMissing:!linked,_contactDomainMismatch:!!linked&&professionalDomain_(linked.website)!==c.domain,_leadWebsiteUnconfirmed:!linked?.confirmed,_identityConfirmed:!!linked&&contactIdentityConfirmed_(c,linked),...(blocked?{do_not_contact:'yes'}:{})},k,[]);if(String(old)!==value){cc[k].push({row:c._r,id:c.contact_id,expected:old,value,field:k});changed++;}}));
     Object.keys(cc).forEach(c=>guidanceWrites_(tab,CONTACT_COLS.indexOf(c)+1,cc[c]));
   }
   return changed;
@@ -117,9 +118,9 @@ function findPublicContactsForIds_(ids,deadline){
     if(!live||cellFillHash_(live)!==before||!websiteIdentityConfirmed_(live))continue;
     const priorNote=sh.getRange(leadSheetRow_(live._r),leadCol_(sh,'phone')).getNote(),prior=publicContactReceipt_(live,priorNote),stamp=new Date().toISOString();
     const complete=result.readable>0&&!result.incomplete,attempts=(Number(prior.attempts)||0)+1;
-    const receipt={version:3,site:prior.site,identity:websiteIdentitySignature_(live),state:complete?'complete':attempts>=3?'error':'pending',attempts,checked:Date.now(),retry_after:complete?0:Date.now()+5*60e3};
+    const receipt={version:3,site:prior.site,identity:websiteIdentitySignature_(live),state:complete?'complete':attempts>=3?'error':'pending',attempts,checked:Date.now(),retry_after:complete?0:Date.now()+5*60e3,emailEvidenceVersion:1,emailCandidates:result.emailCandidates||[]};
     const note='Lead Hunter public contact check | '+stamp+' | '+(result.readable?result.readable+' official-site pages read; person ownership unconfirmed.':'Pages unreadable; no conclusion about contact availability.')+(!complete?' Partial check; missing contacts remain unknown.':'');checked++;
-    if(!live.email&&result.emails?.length){sh.getRange(leadSheetRow_(live._r),leadCol_(sh,'email')).setValue(sheetValue_(result.emails.join(' · ')));found++;}
+    if(!live.email&&result.emails?.length){applyPublicEmailResult_(live,result);const cell=sh.getRange(leadSheetRow_(live._r),leadCol_(sh,'email'));cell.setValue(sheetValue_(live.email));writePublicEmailNote_(cell,live._publicEmailCheck);found++;}
     if(!live.contact&&result.socials?.length)sh.getRange(leadSheetRow_(live._r),leadCol_(sh,'contact')).setValue(sheetValue_(result.socials.join(' · ')));
     if(!live.phone){applyPublicPhoneResult_(live,result);if(live.phone){sh.getRange(leadSheetRow_(live._r),leadCol_(sh,'phone')).setValue(sheetValue_(live.phone));found++;}}
     if(prior.key)PropertiesService.getScriptProperties().setProperty(prior.key,JSON.stringify(receipt));

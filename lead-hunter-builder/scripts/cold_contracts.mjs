@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 export function coldContracts({test,env,plain,answers}) {
  const pc={approach:'cold',suitability:'Public B2B companies can be identified; need unknown',limitations:['No expressed need'],cold_min_fit:65,
   cold_priority:{fit_weight:.7,contact_weight:.2,timing_weight:.1,half_life_days:30},contacts:{provider:'hunter',monthly_credits:5,max_rows_per_run:5,cache_days:30,verification_days:30}};
- const setup=(patch={})=>env([],{mode:'assisted',decision_roles:['owner','operations director'],prospecting:structuredClone(pc),...patch});
+ const setup=(patch={})=>{const e=env([coldLead],{mode:'assisted',decision_roles:['owner','operations director'],prospecting:structuredClone(pc),...patch});e.confirmWebsite(coldLead.id);e.confirmContact({...contact});return e;};
  const contact={lead_id:'cold:a',contact_id:'c1',company:'Example Co',domain:'example.com',name:'Alice Example',role:'Operations director',
   identity_status:'confirmed',email:'alice@example.com',verified_email:'alice@example.com',email_status:'valid',verified_on:new Date(),do_not_contact:''};
  const input={searchStringsArray:['clinics'],locationQuery:'Example city',maxCrawledPlacesPerSearch:10,language:'en',scrapePlaceDetailPage:false,scrapeContacts:false,maximumLeadsEnrichmentRecords:0,verifyLeadsEnrichmentEmails:false,maxReviews:0,maxImages:0,enableCompetitorAnalysis:false};
@@ -10,7 +10,7 @@ export function coldContracts({test,env,plain,answers}) {
  function attachContacts(e,records){
   const writes=[],sheet={getName:()=> 'Contacts',getActiveRangeList:()=>null,getActiveRange:()=>({getRow:()=>2,getLastRow:()=>2}),isRowHiddenByFilter:()=>false,appendRow:row=>records.push(Object.fromEntries(headers.map((k,i)=>[k,row[i]??'']))),getDataRange:()=>({getValues:()=>[headers,...records.map(c=>headers.map(k=>c[k]??''))]}),
    getRange:(row,col)=>({setValue:v=>{writes.push({row,col,v});records[row-2][headers[col-1]]=v;}})};
-  e.sheets.Contacts=sheet;const original=e.s.SpreadsheetApp.getActive;e.s.SpreadsheetApp.getActive=()=>({...original(),getActiveSheet:()=>sheet});return {sheet,writes,records};
+  e.sheets.Contacts=sheet;for(const c of records.filter(c=>c.identity_status==='confirmed')){const lead=e.s.cellFillRow_(e.s.leadData_(),c.lead_id);if(lead&&lead.company){e.confirmWebsite(lead.id);e.confirmContact(c);}}const original=e.s.SpreadsheetApp.getActive;e.s.SpreadsheetApp.getActive=()=>({...original(),getActiveSheet:()=>sheet});return {sheet,writes,records};
  }
  function discoveryFixture(leads,records=[],confirm=true){
   const e=env(leads,{mode:'assisted',decision_roles:['owner','operations director'],prospecting:structuredClone(pc)}),f=attachContacts(e,records),ss=e.s.SpreadsheetApp.getActive();
@@ -22,7 +22,7 @@ export function coldContracts({test,env,plain,answers}) {
   e.s.contactSheets_=()=>({contacts:f.sheet});
   return {...e,...f,select:row=>{selectedRow=row;}};
  }
- const coldLead={id:contact.lead_id,source:'cold_prospect',company:'Example',website:'https://example.com',status:'new',match_pct:85,contact:''};
+ const coldLead={id:contact.lead_id,source:'cold_prospect',company:'Example Co',website:'https://example.com',status:'new',match_pct:85,contact:''};
  const domainResult={domain:'example.com',emails:[{value:contact.email,type:'personal',first_name:'Alice',last_name:'Example',position:'Operations director'}]};
  test('Hunter selected discovery requires durable website identity before provider requests',()=>{const e=discoveryFixture([coldLead],[],false);let calls=0;e.s.hunterRequest_=()=>{calls++;return domainResult;};e.s.findWorkContactsSelected();assert.equal(calls,0);assert.equal(e.records.length,0);e.confirmWebsite(coldLead.id);e.s.findWorkContactsSelected();assert.equal(calls,1);assert.equal(e.records.length,1);});
  test('cold company can fit while intent and readiness remain unknown',()=>{const e=setup(),a=answers(e,.9);a.poster={choice:'seller',confidence:.99};a.pitch={choice:'none'};const r=e.s.jevDerive_(a,{source:'cold_prospect',company:'Example'});assert.equal(r.match_pct,90);assert.equal(r.readiness_pct,'Unknown');assert.equal(r.next_step,'You decide');assert.equal(r.ai_pitch,'exploratory');assert.match(e.s.jevState_({source:'cold_prospect'}).opportunity_type,/UNKNOWN/);});
@@ -85,5 +85,154 @@ export function coldContracts({test,env,plain,answers}) {
   }
  });
  test('domain suppression is reflected on every contact row for priority',()=>{const e=setup(),rec={...contact};attachContacts(e,[rec]);e.store.setProperty(e.s.contactSuppressionKey_('domain:example.com'),'yes');e.s.reconcilePublishedContacts_();assert.equal(rec.do_not_contact,'yes');});
+
+ // 1.3.2 future Hunter charge settlement. Actual request wrapper, fictional replies.
+ const hunterResponse=(data,code=200,extra={})=>({getResponseCode:()=>code,getContentText:()=>JSON.stringify({data,...extra})});
+ const hunterParams=domain=>({domain,type:'personal',limit:5});
+ const ledger=e=>JSON.parse(e.props.LH_CONTACT_CREDIT_BUDGET);
+ function hunterEnv(patch={}){const e=setup(patch);e.props.HUNTER_KEY='fictional-key';return e;}
+ test('Hunter exact empty domain response releases only its own new reservation and keeps legacy spend',()=>{
+  const e=hunterEnv();e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:3.5});let requestId;e.s.UrlFetchApp.fetch=()=>{const state=ledger(e);assert.equal(state.reserved,4.5);assert.equal(state.history.length,1);assert.equal(state.history[0].state,'reserved');requestId=state.history[0].id;return hunterResponse({domain:'example.com',emails:[]});};assert.deepEqual(plain(e.s.hunterRequest_('domain-search',hunterParams('example.com'),1)),{domain:'example.com',emails:[]});const state=ledger(e);assert.equal(state.reserved,3.5);assert.equal(state.history[0].id,requestId);assert.equal(state.history[0].state,'zero');assert.equal(state.history[0].charge,0);assert.doesNotMatch(JSON.stringify(state),/fictional-key|example\.com|Alice/);
+ });
+ test('Hunter raw nonempty results remain charged even when no candidate passes local filters',()=>{
+  const e=hunterEnv(),data={domain:'example.com',emails:[{value:'unknown@elsewhere.test',type:'generic',position:'Unrelated'}]};e.s.UrlFetchApp.fetch=()=>hunterResponse(data);const result=e.s.hunterRequest_('domain-search',hunterParams('example.com'),1);assert.equal(e.s.hunterCandidates_(result,coldLead).length,0);assert.equal(ledger(e).reserved,1);assert.equal(ledger(e).history[0].state,'charged');
+ });
+ test('Hunter empty finder response keeps its maximum reservation',()=>{
+  const e=hunterEnv();e.s.UrlFetchApp.fetch=()=>hunterResponse({email:null});e.s.hunterRequest_('email-finder',{domain:'example.com',full_name:'Fictional Person'},1);assert.equal(ledger(e).reserved,1);assert.equal(ledger(e).history[0].state,'charged');
+ });
+ for(const [label,data,extra] of [['missing array',{domain:'example.com'},{}],['null array',{domain:'example.com',emails:null},{}],['wrong domain',{domain:'other.test',emails:[]},{}],['array data',[],{}],['error response',{domain:'example.com',emails:[]},{errors:[{id:'fictional'}]}]])test('Hunter '+label+' cannot release a reservation or become successful empty discovery',()=>{
+  const e=hunterEnv();e.s.UrlFetchApp.fetch=()=>hunterResponse(data,200,extra);assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/schema|mismatch/);assert.equal(ledger(e).reserved,1);assert.equal(ledger(e).history[0].state,'held');
+ });
+ for(const status of [202,451,429])test('Hunter HTTP '+status+' retains the maximum without a successful-zero receipt',()=>{
+  const e=hunterEnv();e.s.UrlFetchApp.fetch=()=>hunterResponse({domain:'example.com',emails:[]},status);if(status===429)assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/HTTP 429/);else e.s.hunterRequest_('domain-search',hunterParams('example.com'),1);assert.equal(ledger(e).reserved,1);assert.equal(ledger(e).history[0].state,'held');assert.notEqual(ledger(e).history[0].charge,0);
+ });
+ for(const failure of ['timeout','unreadable'])test('Hunter '+failure+' remains held conservatively',()=>{
+  const e=hunterEnv();e.s.UrlFetchApp.fetch=()=>{if(failure==='timeout')throw Error('Fictional transport timeout');return {getResponseCode:()=>200,getContentText:()=>'{broken'};};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/transport|unreadable/);assert.equal(ledger(e).reserved,1);assert.equal(ledger(e).history[0].state,'held');
+ });
+ test('Hunter credit ceiling rejects missing or excessive Domain Search limits before admission',()=>{
+  const e=hunterEnv();let calls=0;e.s.UrlFetchApp.fetch=()=>{calls++;return hunterResponse({domain:'example.com',emails:[]});};for(const limit of [undefined,0,11,1.5])assert.throws(()=>e.s.hunterRequest_('domain-search',{domain:'example.com',limit},1),/result limit/);assert.equal(calls,0);assert.equal(e.props.LH_CONTACT_CREDIT_BUDGET,undefined);
+ });
+ test('Hunter durable reservation readback is required before HTTP',()=>{
+  const e=hunterEnv(),save=e.store.setProperty;let calls=0;e.store.setProperty=(k,v)=>{if(k!=='LH_CONTACT_CREDIT_BUDGET')save(k,v);};e.s.UrlFetchApp.fetch=()=>{calls++;return hunterResponse({domain:'example.com',emails:[]});};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/could not be confirmed/);assert.equal(calls,0);assert.equal(e.props.LH_CONTACT_CREDIT_BUDGET,undefined);
+ });
+ test('Hunter settlement save failure keeps the current reservation and never releases past spend',()=>{
+  const e=hunterEnv(),save=e.store.setProperty;e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:2});e.store.setProperty=(k,v)=>{if(k==='LH_CONTACT_CREDIT_BUDGET'&&JSON.parse(v).history?.at(-1)?.state==='zero')throw Error('Fictional settlement save failure');save(k,v);};e.s.UrlFetchApp.fetch=()=>hunterResponse({domain:'example.com',emails:[]});assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/settlement save failure/);assert.equal(ledger(e).reserved,3);assert.equal(ledger(e).history[0].state,'held');
+ });
+ test('Hunter atomic receipt plus counter survives post-save interruption and duplicate settlement',()=>{
+  const e=hunterEnv(),save=e.store.setProperty;e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:2});let interrupted=false;e.store.setProperty=(k,v)=>{save(k,v);if(k==='LH_CONTACT_CREDIT_BUDGET'&&JSON.parse(v).history?.at(-1)?.state==='zero'&&!interrupted){interrupted=true;throw Error('Fictional post-save interruption');}};e.s.UrlFetchApp.fetch=()=>hunterResponse({domain:'example.com',emails:[]});assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/post-save interruption/);const state=ledger(e),receipt=state.history[0];assert.equal(state.reserved,2);assert.equal(receipt.state,'zero');assert.equal(e.s.settleContactCredits_(receipt,e.store,'2026-09',0),false);assert.equal(ledger(e).reserved,2);assert.throws(()=>e.s.settleContactCredits_(receipt,e.store,'2026-09',1),/settlement changed/);assert.throws(()=>e.s.settleContactCredits_({...receipt,scope:'a'.repeat(32)},e.store,'2026-09',0),/reservation changed/);assert.equal(ledger(e).reserved,2);
+ });
+ test('Hunter overlapping requests settle their own unique reservation under the script lock',()=>{
+  const e=hunterEnv(),save=e.store.setProperty;let locked=false,requests=0;e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:2});e.s.LockService.getScriptLock=()=>({waitLock:()=>{assert.equal(locked,false);locked=true;},releaseLock:()=>{locked=false;}});e.store.setProperty=(k,v)=>{if(k==='LH_CONTACT_CREDIT_BUDGET')assert.equal(locked,true);save(k,v);};e.s.UrlFetchApp.fetch=url=>{assert.equal(locked,false);requests++;if(url.includes('domain=example.com')){e.s.hunterRequest_('domain-search',hunterParams('other.test'),1);return hunterResponse({domain:'example.com',emails:[]});}return hunterResponse({domain:'other.test',emails:[{value:'unrelated@other.test'}]});};e.s.hunterRequest_('domain-search',hunterParams('example.com'),1);const state=ledger(e);assert.equal(requests,2);assert.equal(state.reserved,3);assert.equal(new Set(state.history.map(r=>r.id)).size,2);assert.deepEqual(plain(state.history.map(r=>r.state)),['zero','charged']);assert.equal(locked,false);
+ });
+ test('Hunter month rollover cannot release a different cycle or reconstruct old spend',()=>{
+  const e=hunterEnv();e.s.UrlFetchApp.fetch=()=>{e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-10',reserved:4});return hunterResponse({domain:'example.com',emails:[]});};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/reservation changed/);assert.deepEqual(ledger(e),{month:'2026-10',reserved:4});
+ });
+ test('Hunter erased current receipt cannot refund a replacement owner counter',()=>{
+  const e=hunterEnv();e.s.UrlFetchApp.fetch=()=>{e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:4});return hunterResponse({domain:'example.com',emails:[]});};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/reservation changed/);assert.equal(ledger(e).reserved,4);
+ });
+ test('Hunter 35 requests archive completed receipts without erasing history or changing prior spend',()=>{
+  const e=hunterEnv();e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:2});let calls=0;e.s.UrlFetchApp.fetch=url=>{calls++;return hunterResponse({domain:new URL(url).searchParams.get('domain'),emails:[]});};for(let i=0;i<35;i++)e.s.hunterRequest_('domain-search',hunterParams('fictional-'+i+'.test'),1);const state=ledger(e),H=e.logGrid[0],rows=e.logGrid.slice(1);assert.equal(calls,35);assert.equal(state.reserved,2);assert.equal(state.history.length,30);assert.equal(rows.length,5);const archived=rows.map(r=>{assert.equal(r[H.indexOf('cost_usd')],0);assert.equal(r[H.indexOf('source')],'hunter_credit_ledger');assert.equal(r[H.indexOf('type')],'contact_credit_receipt');const note=r[H.indexOf('note')],body=note.split(' | ').at(-1);assert.ok(note.includes(e.s.discoveryHash_(body)));assert.equal(JSON.parse(body).unit,'Hunter API credits');return JSON.parse(body);});assert.equal(new Set([...archived,...state.history].map(r=>r.id)).size,35);assert.ok(e.props.LH_CONTACT_CREDIT_BUDGET.length<8000);assert.doesNotMatch(JSON.stringify([state,rows]),/fictional-|fictional-key|@/);
+ });
+
+ function archiveEnv(){
+  const e=hunterEnv(),at=Date.now()-5000,history=Array.from({length:30},(_,i)=>({id:(i+1).toString(16).padStart(32,'0'),scope:'a'.repeat(32),month:'2026-08',endpoint:'domain-search',ceiling:1,state:'zero',at,ended:at+1000,charge:0}));
+  e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:2,history});let calls=0;e.s.UrlFetchApp.fetch=()=>{calls++;return hunterResponse({domain:'example.com',emails:[]});};return {...e,history,calls:()=>calls,request:()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1)};
+ }
+ function archiveBlocked(e,pattern){const before=e.props.LH_CONTACT_CREDIT_BUDGET;assert.throws(e.request,pattern);assert.equal(e.calls(),0);assert.equal(e.props.LH_CONTACT_CREDIT_BUDGET,before);}
+
+ for(const zone of ['+05:00','-07:00'])test('Hunter typed archive month survives native date coercion in timezone '+zone,()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,H=e.logGrid[0],month=H.indexOf('month')+1,date=H.indexOf('date')+1;let typed=0;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),set=cell.setValue,rich=cell.setRichTextValue;cell.setValue=v=>set.call(cell,c===month&&typeof v==='string'&&/^\d{4}-\d{2}$/.test(v)&&cell.getNumberFormat()!=='@'?new Date(v+'-01T00:00:00'+zone):v);cell.setRichTextValue=v=>{typed++;return c===month&&cell.getNumberFormat()!=='@'?set.call(cell,new Date(v.getText()+'-01T00:00:00'+zone)):rich.call(cell,v);};return cell;};e.request();assert.equal(e.calls(),1);assert.equal(typed,1);assert.equal(typeof e.logGrid[1][month-1],'string');assert.equal(e.logGrid[1][month-1],'2026-08');assert.equal(Number(e.logGrid[1][date-1]),e.history[0].ended);assert.equal(ledger(e).reserved,2);e.s.archiveContactCreditReceipt_(e.history[0]);assert.equal(typed,1);assert.equal(e.logGrid.length,2);
+ });
+
+ for(const change of ['value','note','formula'])test('Hunter month '+change+' ownership change during text formatting stops before content write',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,month=e.logGrid[0].indexOf('month')+1;let changed=false,typed=0;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),format=cell.setNumberFormat,rich=cell.setRichTextValue;if(r>1&&c===month&&nc===1){cell.setNumberFormat=v=>{const out=format.call(cell,v);if(!changed){changed=true;if(change==='value')e.logGrid[r-1][c-1]='Owner during format';if(change==='note')cell.setNote('Owner during format');if(change==='formula')cell.setFormula('=""');}return out;};cell.setRichTextValue=v=>{typed++;return rich.call(cell,v);};}return cell;};archiveBlocked(e,/month ownership/);assert.equal(typed,0);if(change==='value')assert.equal(e.logGrid[1][month-1],'Owner during format');if(change==='note')assert.equal(e.sheets.Log.getRange(2,month).getNote(),'Owner during format');if(change==='formula')assert.equal(e.sheets.Log.getRange(2,month).getFormula(),'=""');
+ });
+ test('Hunter month header movement during text formatting preserves the owner column',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange;e.logGrid[0].push('owner_custom');const month=e.logGrid[0].indexOf('month'),owner=e.logGrid[0].indexOf('owner_custom');let changed=false;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),format=cell.setNumberFormat;if(r>1&&c===month+1&&nc===1)cell.setNumberFormat=v=>{const out=format.call(cell,v);if(!changed){changed=true;for(const row of e.logGrid)[row[month],row[owner]]=[row[owner]??'',row[month]??''];e.logGrid[r-1][month]='Owner moved column';}return out;};return cell;};archiveBlocked(e,/columns changed/);assert.equal(e.logGrid[1][month],'Owner moved column');
+ });
+ test('Hunter month follows its stable receipt ID after a sort during formatting',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,H=e.logGrid[0],month=H.indexOf('month')+1,id=H.indexOf('run_id')+1;e.logGrid.push(H.map(k=>k==='run_id'?'zz-owner':k==='note'?'Owner sort row':''));const owner=e.logGrid[1].slice();let sorted=false;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),format=cell.setNumberFormat;if(r>1&&c===month&&nc===1)cell.setNumberFormat=v=>{const out=format.call(cell,v);if(!sorted){sorted=true;e.logGrid.splice(1,e.logGrid.length-1,...e.logGrid.slice(1).sort((a,b)=>String(a[id-1]).localeCompare(String(b[id-1]))));const receiptRow=e.logGrid.findIndex(row=>String(row[id-1]).startsWith('hunter_receipt:'))+1,ownerRow=e.logGrid.findIndex(row=>row[id-1]==='zz-owner')+1;range(receiptRow,month).setNumberFormat('@');range(ownerRow,month).setNumberFormat('General');}return out;};return cell;};e.request();assert.equal(e.calls(),1);assert.deepEqual(e.logGrid.find(row=>row[id-1]==='zz-owner'),owner);const archived=e.logGrid.find(row=>String(row[id-1]).startsWith('hunter_receipt:'));assert.equal(archived[month-1],'2026-08');assert.equal(ledger(e).reserved,2);
+ });
+ test('Hunter month format save failure retains receipt and resumes the same partial archive',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,month=e.logGrid[0].indexOf('month')+1;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc);if(r>1&&c===month&&nc===1)cell.setNumberFormat=()=>{throw Error('Fictional text format outage');};return cell;};archiveBlocked(e,/format outage/);assert.equal(e.logGrid.length,2);e.sheets.Log.getRange=range;e.request();assert.equal(e.calls(),1);assert.equal(e.logGrid.length,2);assert.equal(e.logGrid[1][month-1],'2026-08');
+ });
+ test('Hunter month format readback failure cannot advance the ledger or start HTTP',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,month=e.logGrid[0].indexOf('month')+1;let typed=0;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),rich=cell.setRichTextValue;if(r>1&&c===month&&nc===1){cell.getNumberFormat=()=> 'yyyy-m';cell.setRichTextValue=v=>{typed++;return rich.call(cell,v);};}return cell;};archiveBlocked(e,/month ownership or format/);assert.equal(typed,0);assert.equal(e.logGrid[1][month-1]??'','');
+ });
+ test('Hunter preexisting coerced month remains a conflict rather than an inferred repair',()=>{
+  const e=archiveEnv();e.s.archiveContactCreditReceipt_(e.history[0]);const month=e.logGrid[0].indexOf('month'),ownerDate=new Date('2026-08-01T00:00:00+05:00');e.logGrid[1][month]=ownerDate;archiveBlocked(e,/conflicts/);assert.equal(e.logGrid[1][month],ownerDate);
+ });
+ test('Hunter typed month write preserves an owner value added after the initial blank read',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,month=e.logGrid[0].indexOf('month')+1;let changed=false,typed=0;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),get=cell.getValue,rich=cell.setRichTextValue;if(r>1&&c===month&&nc===1){cell.getValue=()=>{const value=get();if(!changed){changed=true;e.logGrid[r-1][c-1]='Owner month context';}return value;};cell.setRichTextValue=v=>{typed++;return rich.call(cell,v);};}return cell;};archiveBlocked(e,/field/);assert.equal(typed,0);assert.equal(e.logGrid[1][month-1],'Owner month context');
+ });
+ test('Hunter archive replay uses its stable receipt ID and preserves prior-month charge proof',()=>{
+  const e=archiveEnv();e.history[0].state='charged';e.history[0].charge=1;e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:2,history:e.history});const first=e.s.archiveContactCreditReceipt_(e.history[0]);e.request();assert.equal(e.calls(),1);assert.equal(e.logGrid.length,2);assert.equal(ledger(e).reserved,2);assert.equal(ledger(e).history.length,30);assert.equal(ledger(e).history.some(r=>r.id===e.history[0].id),false);assert.match(e.logGrid[1][e.logGrid[0].indexOf('note')],/"month":"2026-08".*"state":"charged".*"charge":1/);assert.equal(e.logGrid[1][e.logGrid[0].indexOf('run_id')],first.id);
+ });
+ test('Hunter archive survives interrupted ledger admission and deduplicates on restart before HTTP',()=>{
+  const e=archiveEnv(),save=e.store.setProperty;e.store.setProperty=(k,v)=>{if(k==='LH_CONTACT_CREDIT_BUDGET')throw Error('Fictional admission outage');save(k,v);};archiveBlocked(e,/admission outage/);assert.equal(e.logGrid.length,2);e.store.setProperty=save;e.request();assert.equal(e.logGrid.length,2);assert.equal(e.calls(),1);assert.equal(ledger(e).reserved,2);
+ });
+ test('Hunter partial archive append resumes the same ID after a field write fails',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,note=e.logGrid[0].indexOf('note')+1;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc);if(r>1&&c===note&&nc===1)cell.setValue=()=>{throw Error('Fictional note outage');};return cell;};archiveBlocked(e,/note outage/);assert.equal(e.logGrid.length,2);assert.equal(e.logGrid[1][note-1]??'','');e.sheets.Log.getRange=range;e.request();assert.equal(e.logGrid.length,2);assert.equal(e.calls(),1);assert.match(e.logGrid[1][note-1],/Hunter API credits/);
+ });
+ test('Hunter archive final readback failure retains the recent receipt and can safely restart',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,note=e.logGrid[0].indexOf('note');e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),get=cell.getValues;if(r>1&&c===1&&nc===e.logGrid[0].length)cell.getValues=()=>{const rows=get();if(rows[0][note])rows[0][note]='Fictional unreadable receipt';return rows;};return cell;};archiveBlocked(e,/readback failed/);assert.equal(e.logGrid.length,2);e.sheets.Log.getRange=range;e.request();assert.equal(e.logGrid.length,2);assert.equal(e.calls(),1);
+ });
+ test('Hunter conflicting archived owner value prevents eviction and another HTTP request',()=>{
+  const e=archiveEnv(),saved=e.s.archiveContactCreditReceipt_(e.history[0]),source=e.logGrid[0].indexOf('source');e.logGrid[saved.row-1][source]='Owner correction';archiveBlocked(e,/conflicts/);assert.equal(e.logGrid[saved.row-1][source],'Owner correction');
+ });
+ test('Hunter duplicate archived receipt IDs cannot be treated as a durable unique receipt',()=>{
+  const e=archiveEnv();e.s.archiveContactCreditReceipt_(e.history[0]);e.logGrid.push(e.logGrid[1].slice());archiveBlocked(e,/Duplicate contact archive/);assert.equal(e.logGrid.length,3);
+ });
+ test('Hunter archive follows reversed Log headers while preserving custom fields and notes',()=>{
+  const e=archiveEnv();e.logGrid[0].reverse();e.logGrid[0].push('owner_custom');const owner=e.logGrid[0].map(k=>k==='run_id'?'owner-row':k==='owner_custom'?'Owner formula result':'');e.logGrid.push(owner);e.sheets.Log.getRange(2,1).setNote('Owner note');e.request();assert.equal(e.calls(),1);assert.deepEqual(e.logGrid[1],owner);assert.equal(e.sheets.Log.getRange(2,1).getNote(),'Owner note');const r=e.logGrid[2],H=e.logGrid[0];assert.equal(r[H.indexOf('cost_usd')],0);assert.match(r[H.indexOf('note')],/Hunter API credits/);assert.equal(r[H.indexOf('owner_custom')]??'','');
+ });
+ test('Hunter archive re-finds the receipt after a sort immediately following its ID write',()=>{
+  const e=archiveEnv(),H=e.logGrid[0],idCol=H.indexOf('run_id')+1,range=e.sheets.Log.getRange;e.logGrid.push(H.map(k=>k==='run_id'?'zz-owner':k==='note'?'Owner log row':''));const owner=e.logGrid[1].slice();e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),set=cell.setValue;if(c===idCol&&r>1)cell.setValue=v=>{const result=set.call(cell,v);e.logGrid.splice(1,e.logGrid.length-1,...e.logGrid.slice(1).sort((a,b)=>String(a[idCol-1]).localeCompare(String(b[idCol-1]))));return result;};return cell;};e.request();assert.equal(e.calls(),1);assert.deepEqual(e.logGrid.find(r=>r[idCol-1]==='zz-owner'),owner);assert.match(e.logGrid.find(r=>String(r[idCol-1]).startsWith('hunter_receipt:'))[H.indexOf('note')],/Hunter API credits/);
+ });
+ test('Hunter archive header change between field read and write preserves the new owner column',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange;e.logGrid[0].push('owner_custom');const source=e.logGrid[0].indexOf('source'),custom=e.logGrid[0].indexOf('owner_custom');let changed=false;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),get=cell.getValue;if(r>1&&c===source+1&&nc===1)cell.getValue=()=>{const result=get();if(!changed){changed=true;for(const row of e.logGrid)[row[source],row[custom]]=[row[custom]??'',row[source]??''];e.logGrid[r-1][source]='Owner concurrent value';}return result;};return cell;};archiveBlocked(e,/headers changed|columns changed/);assert.equal(e.logGrid[1][source],'Owner concurrent value');
+ });
+
+ for(const change of ['value','note'])test('Hunter same-field owner '+change+' added during archive reads cannot be overwritten',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,source=e.logGrid[0].indexOf('source')+1;let changed=false;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),get=cell.getValue;if(r>1&&c===source&&nc===1)cell.getValue=()=>{const result=get();if(!changed){changed=true;if(change==='value')e.logGrid[r-1][c-1]='Owner same-field value';else cell.setNote('Owner same-field note');}return result;};return cell;};archiveBlocked(e,/field|owner note/);if(change==='value')assert.equal(e.logGrid[1][source-1],'Owner same-field value');else assert.equal(e.sheets.Log.getRange(2,source).getNote(),'Owner same-field note');
+ });
+ test('Hunter owner append race cannot be overwritten by a planned archive row',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange,H=e.logGrid[0];let raced=false;e.sheets.Log.getRange=(r,c,nr=1,nc=1)=>{const cell=range(r,c,nr,nc),get=cell.getValues;if(r===2&&c===1&&nc===H.length)cell.getValues=()=>{const result=get();if(!raced){raced=true;e.logGrid.push(H.map(k=>k==='run_id'?'Owner new row':k==='note'?'Owner note':''));}return result;};return cell;};archiveBlocked(e,/append row/);assert.equal(e.logGrid[1][H.indexOf('run_id')],'Owner new row');assert.equal(e.logGrid[1][H.indexOf('note')],'Owner note');
+ });
+ for(const kind of ['missing','duplicate','formula'])test('Hunter '+kind+' Log header blocks archival before provider admission',()=>{
+  const e=archiveEnv(),H=e.logGrid[0];if(kind==='missing')H[H.indexOf('note')]='owner_note';if(kind==='duplicate')H.push('note');if(kind==='formula')e.sheets.Log.getRange(1,H.indexOf('note')+1).setFormula('="note"');archiveBlocked(e,/unique Log headers/);assert.equal(e.logGrid.length,1);
+ });
+ for(const kind of ['append formula','partial blank formula','matching receipt formula','blank owner note'])test('Hunter '+kind+' is preserved rather than overwritten or accepted as durable billing proof',()=>{
+  const e=archiveEnv(),H=e.logGrid[0],source=H.indexOf('source')+1,id=H.indexOf('run_id')+1,note=H.indexOf('note')+1;
+  if(kind==='matching receipt formula'){e.s.archiveContactCreditReceipt_(e.history[0]);e.sheets.Log.getRange(2,note).setFormula('="matching receipt text"');}
+  else if(kind==='append formula')e.sheets.Log.getRange(2,source).setFormula('=""');
+  else{e.logGrid.push(H.map(k=>k==='run_id'?'hunter_receipt:'+e.history[0].id:''));if(kind==='blank owner note')e.sheets.Log.getRange(2,source).setNote('Owner research');else e.sheets.Log.getRange(2,source).setFormula('=""');}
+  archiveBlocked(e,/formula|owner note|append row changed/);if(kind.includes('formula'))assert.ok(e.sheets.Log.getRange(2,kind==='matching receipt formula'?note:source).getFormula());else assert.equal(e.sheets.Log.getRange(2,source).getNote(),'Owner research');
+ });
+ test('Hunter archived billing writes reuse the request lock and never nest or release it early',()=>{
+  const e=archiveEnv(),range=e.sheets.Log.getRange;let locked=false;e.s.LockService.getScriptLock=()=>({waitLock:()=>{assert.equal(locked,false);locked=true;},releaseLock:()=>{assert.equal(locked,true);locked=false;}});e.sheets.Log.getRange=(...args)=>{const cell=range(...args);for(const method of ['setValue','setRichTextValue','setNumberFormat']){const write=cell[method];cell[method]=v=>{assert.equal(locked,true);return write.call(cell,v);};}return cell;};e.s.UrlFetchApp.fetch=()=>{assert.equal(locked,false);return hunterResponse({domain:'example.com',emails:[]});};e.request();assert.equal(locked,false);assert.equal(ledger(e).reserved,2);
+ });
+ test('Hunter unresolved history bound fails before another provider request',()=>{
+  const e=hunterEnv({prospecting:{...pc,contacts:{...pc.contacts,monthly_credits:40}}});const history=Array.from({length:30},(_,i)=>({id:i.toString(16).padStart(32,'0'),scope:'a'.repeat(32),month:'2026-09',endpoint:'domain-search',ceiling:1,state:'reserved',at:Date.now()}));e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:30,history});let calls=0;e.s.UrlFetchApp.fetch=()=>{calls++;};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/unresolved/);assert.equal(calls,0);assert.equal(ledger(e).reserved,30);
+ });
+
+ test('Hunter interruption with unavailable receipt storage retains the original pre-call reservation',()=>{
+  const e=hunterEnv(),save=e.store.setProperty;e.s.UrlFetchApp.fetch=()=>{e.store.setProperty=(k,v)=>{if(k==='LH_CONTACT_CREDIT_BUDGET')throw Error('Fictional storage outage after reservation');save(k,v);};throw Error('Fictional execution interruption');};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/transport/);assert.equal(ledger(e).reserved,1);assert.equal(ledger(e).history[0].state,'reserved');assert.notEqual(ledger(e).history[0].charge,0);
+ });
+
+ test('Hunter zero charge and receipt commit use one atomic property mutation',()=>{
+  const e=hunterEnv(),save=e.store.setProperty;let writes=[];e.props.LH_CONTACT_CREDIT_BUDGET=JSON.stringify({month:'2026-09',reserved:2});e.s.UrlFetchApp.fetch=()=>{e.store.setProperty=(k,v)=>{writes.push({k,v});save(k,v);};return hunterResponse({domain:'example.com',emails:[]});};e.s.hunterRequest_('domain-search',hunterParams('example.com'),1);const changed=writes.filter(w=>w.k==='LH_CONTACT_CREDIT_BUDGET');assert.equal(changed.length,1);const final=JSON.parse(changed[0].v);assert.equal(final.reserved,2);assert.equal(final.history[0].state,'zero');assert.equal(final.history[0].charge,0);
+ });
+ test('Hunter receipt storage checks UTF8 bytes before another request',()=>{
+  const e=hunterEnv(),old=JSON.stringify({month:'2026-09',reserved:1,legacy_note:'😀'.repeat(2050)});e.props.LH_CONTACT_CREDIT_BUDGET=old;let calls=0;e.s.UrlFetchApp.fetch=()=>{calls++;};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/storage bound/);assert.equal(calls,0);assert.equal(e.props.LH_CONTACT_CREDIT_BUDGET,old);
+ });
+
+ test('Hunter held timeout and pending receipts remain available for reconciliation at the history bound',()=>{
+  const e=hunterEnv({prospecting:{...pc,contacts:{...pc.contacts,monthly_credits:40}}}),history=Array.from({length:30},(_,i)=>({id:i.toString(16).padStart(32,'0'),scope:'b'.repeat(32),month:'2026-09',endpoint:'domain-search',ceiling:1,state:'held',at:Date.now(),ended:Date.now()})),before=JSON.stringify({month:'2026-09',reserved:30,history});e.props.LH_CONTACT_CREDIT_BUDGET=before;let calls=0;e.s.UrlFetchApp.fetch=()=>{calls++;return hunterResponse({domain:'example.com',emails:[]});};assert.throws(()=>e.s.hunterRequest_('domain-search',hunterParams('example.com'),1),/unresolved/);assert.equal(calls,0);assert.equal(e.props.LH_CONTACT_CREDIT_BUDGET,before);
+ });
+
+ test('Hunter new calendar cycle preserves prior receipts without allowing a cross-month refund',()=>{
+  const e=hunterEnv();e.s.UrlFetchApp.fetch=()=>hunterResponse({domain:'example.com',emails:[]});e.s.hunterRequest_('domain-search',hunterParams('example.com'),1);const old=ledger(e).history[0];e.s.reserveContactCredits_(1,e.store,'2026-10');assert.equal(ledger(e).month,'2026-10');assert.equal(ledger(e).reserved,1);assert.deepEqual(ledger(e).history[0],old);assert.throws(()=>e.s.settleContactCredits_(old,e.store,'2026-09',0),/reservation changed/);assert.equal(ledger(e).reserved,1);
+ });
 
 }

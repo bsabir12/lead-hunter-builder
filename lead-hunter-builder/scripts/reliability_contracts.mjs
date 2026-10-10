@@ -54,7 +54,7 @@ export function reliabilityContracts({test,env,assert,plain,fixture,assisted}) {
   assert.ok(e.s.sourcePost_(row).includes('Late Buyer Name'));assert.equal(e.s.sourceIncomplete_(row),false);
  });
  test('exhaustive scan resumes after three windows and retains a late verified name',()=>{
-  const e=env([],configured);e.props.GROQ_KEY='fixture';const body='a'.repeat(4200)+' Copper Orchard Ltd ',row={id:'late',notes:e.s.sourceNotes_(body),_clue:true,company:''};let calls=0;
+  const e=env([],configured);e.props.GROQ_KEY='fixture';const body='a'.repeat(4200)+' We are Copper Orchard Ltd and need external support. ',row={id:'late',notes:e.s.sourceNotes_(body),_clue:true,company:''};let calls=0;
   e.s.llmAsk_=(_system,text)=>{calls++;return{text:text.includes('Copper Orchard Ltd')?'Copper Orchard Ltd':'NONE'};};
   e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'');assert.equal(e.s.brandScanState_(row).state.cursor,3);assert.equal(e.s.brandScanState_(row).state.status,'pending');
   e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'Copper Orchard Ltd');assert.ok(calls<=6);assert.equal(e.s.brandScanState_(row).state.status,'found');
@@ -154,7 +154,7 @@ export function reliabilityContracts({test,env,assert,plain,fixture,assisted}) {
  });
  test('Apollo rechecks changed lead status, domain and cross-row suppression after approval',()=>{
   const e=env([fixture]),contact={contact_id:'person',lead_id:fixture.id,domain:'alpha.example',provider_person_id:'provider-person',identity_status:'confirmed'};
-  e.confirmWebsite(fixture.id);
+  e.confirmWebsite(fixture.id);e.confirmContact(contact);
   let all=[contact];e.s.contactRows_=()=>all;
   assert.ok(e.s.currentApolloContact_({},contact,true));e.set(fixture.id,'status','sent');assert.equal(e.s.currentApolloContact_({},contact,true),null);
   e.set(fixture.id,'status','new');e.set(fixture.id,'website','https://other.example');assert.equal(e.s.currentApolloContact_({},contact,true),null);
@@ -266,7 +266,7 @@ export function reliabilityContracts({test,env,assert,plain,fixture,assisted}) {
  });
  test('pending Apollo phone work requires linked fresh identity, confirmation and suppression checks',()=>{
   for(const invalid of ['none','sent','domain','unconfirmed','suppressed','missing','stale']){
-   const e=env([fixture],configured),contact={contact_id:'pending-person',lead_id:fixture.id,domain:'alpha.example',identity_status:'confirmed',provider_person_id:'person',pending_request_id:'123'};e.confirmWebsite(fixture.id);
+   const e=env([fixture],configured),contact={contact_id:'pending-person',lead_id:fixture.id,domain:'alpha.example',identity_status:'confirmed',provider_person_id:'person',pending_request_id:'123'};e.confirmWebsite(fixture.id);e.confirmContact(contact);
    const all=[contact];e.s.contactRows_=()=>all;e.s.contactSheets_=()=>({contacts:{}});
    if(invalid==='sent')e.set(fixture.id,'status','sent');if(invalid==='domain')contact.domain='other.example';if(invalid==='unconfirmed')contact.identity_status='unconfirmed';if(invalid==='suppressed')contact.do_not_contact='yes';if(invalid==='missing')contact.lead_id='missing';if(invalid==='stale')e.set(fixture.id,'what_they_want','Changed source');
    let calls=0;e.s.apolloFetch_=()=>{calls++;return{getResponseCode:()=>404,getContentText:()=>JSON.stringify({error_code:'result_pending'})};};e.s.commitContact_=()=>true;
@@ -274,7 +274,7 @@ export function reliabilityContracts({test,env,assert,plain,fixture,assisted}) {
   }
  });
  test('pending Apollo poll rechecks eligibility immediately before each request',()=>{
-  const e=env([fixture],configured),contact={contact_id:'pending',lead_id:fixture.id,domain:'alpha.example',identity_status:'confirmed',provider_person_id:'person',pending_request_id:'123'};e.confirmWebsite(fixture.id);e.s.contactRows_=()=>[contact];e.s.contactSheets_=()=>({contacts:{}});
+  const e=env([fixture],configured),contact={contact_id:'pending',lead_id:fixture.id,domain:'alpha.example',identity_status:'confirmed',provider_person_id:'person',pending_request_id:'123'};e.confirmWebsite(fixture.id);e.confirmContact(contact);e.s.contactRows_=()=>[contact];e.s.contactSheets_=()=>({contacts:{}});
   const actual=e.s.apolloPendingContacts_;e.s.apolloPendingContacts_=tab=>{const selected=actual(tab);e.set(fixture.id,'status','sent');return selected;};e.s.apolloFetch_=()=>{throw Error('Stale approval polled');};assert.equal(e.s.pollApolloPhonesAutomatic_(Date.now()+90000),0);
  });
  test('selected contact failure retains only safely committed verified website prerequisites',()=>{
@@ -385,6 +385,110 @@ export function reliabilityContracts({test,env,assert,plain,fixture,assisted}) {
  });
  test('missing-worker readiness requires work and budget review instead of a restart instruction',()=>{
   const e=env(),active=e.s.SpreadsheetApp.getActive;e.s.SpreadsheetApp.getActive=()=>({...active(),getSheetByName:n=>e.sheets[n]||{}});e.s.pending_=()=>[{runId:'retained-run'}];const before=JSON.stringify(e.props),ready=e.s.readiness_();assert.ok(ready.issues.some(n=>n.includes('Review queued work, Log and monthly limits')));assert.ok(!ready.issues.some(n=>n.includes('Use Collect finished')));assert.equal(e.starts.length,0);assert.equal(e.timers.length,0);assert.equal(JSON.stringify(e.props),before);
+ });
+
+ test('configured HR and recruiting targets keep supported posters, queries and ranked contacts',()=>{
+  const roles=['HR manager','Recruiter','HR coordinator'],e=env([], {...configured,decision_roles:roles});
+  for(const role of roles)assert.match(e.s.jobPoster_({source:'linkedin_jobs',company:'Example Company',link:'https://www.linkedin.com/jobs/view/fictional',notes:'post: Riley Sample is hiring for Example Company.',contact:'Riley Sample — '+role+' at Example Company https://www.linkedin.com/in/riley-fixture'}),/Riley Sample/);
+  const queries=e.s.peopleQueries_(fixture).join(' ');for(const role of roles)assert.ok(queries.includes(role));
+  const chosen=e.s.pickPeople_([{name:'Founder Fixture',headline:'Founder',p:.99},{name:'Recruiter Fixture',headline:'Recruiter',p:.9},{name:'HR Fixture',headline:'HR manager',p:.85}]);assert.deepEqual(plain(chosen.map(p=>p.name)),['HR Fixture','Recruiter Fixture']);
+ });
+ test('configured privacy and legal roles remain supported without private marketing assumptions',()=>{
+  const roles=['Privacy officer','General counsel','Data protection officer'],e=env([], {...configured,decision_roles:roles});
+  for(const role of roles)assert.match(e.s.jobPoster_({source:'linkedin_jobs',company:'Example Company',link:'https://www.linkedin.com/jobs/view/fictional',notes:'post: Riley Sample is hiring for Example Company.',contact:'Riley Sample — '+role+' at Example Company https://www.linkedin.com/in/riley-fixture'}),/Riley Sample/);
+  assert.ok(e.s.peopleQueries_(fixture).join(' ').includes('General counsel'));
+  const chosen=e.s.pickPeople_([{name:'Founder Fixture',headline:'Founder',p:.99},{name:'Legal Fixture',headline:'General counsel',p:.85},{name:'Privacy Fixture',headline:'Privacy officer',p:.8}]);assert.deepEqual(plain(chosen.map(p=>p.name)),['Privacy Fixture','Legal Fixture']);
+ });
+
+ // 1.3.2 evidence contracts. Fictional text, mailboxes and provider stubs only.
+ test('brand names require full Unicode word boundaries instead of a substring',()=>{
+  const e=env();for(const [name,text] of [['Continuing Opportunit','Continuing Opportunities'],['Copper','Copperstone'],['Orchard','Orchard.test'],['AtlasWriter','@AtlasWriter'],['école','écoles']])assert.equal(e.s.cleanBrand_(name,text),'');assert.equal(e.s.cleanBrand_('Copper Orchard','We are Copper Orchard and seek support.'),'Copper Orchard');
+ });
+ test('local buyer relationship rejects headings, authors, tools and competitors',()=>{
+  const e=env();for(const text of ['Continuing Opportunities: Copper Orchard','Posted by Copper Orchard for an unnamed client','For example Copper Orchard is hiring','We use software Copper Orchard','Our competitor Copper Orchard is hiring'])assert.equal(e.s.brandRelationshipEvidence_('Copper Orchard',text,{contact:'@AtlasWriter'}),null);
+  assert.equal(e.s.brandRelationshipEvidence_('AtlasWriter','AtlasWriter is hiring for an unnamed client',{contact:'@AtlasWriter'}),null);
+  for(const text of ['We are Copper Orchard and need a website.','Our company is Copper Orchard. We need support.','Copper Orchard is hiring a technician.','About us: Copper Orchard is a manufacturer.'])assert.equal(e.s.brandRelationshipEvidence_('Copper Orchard',text,{}).relationship,'hiring_business');
+ });
+ test('ambiguous buyer relation gets one reviewed exact quote and retains its witness',()=>{
+  const e=env([],configured),text='Join the team at Copper Orchard. We need an outside audit.',quote='Join the team at Copper Orchard.';let calls=0;e.s.llmAsk_=()=>{calls++;return {text:JSON.stringify({name:'Copper Orchard',quote,relationship:'hiring_business'})};};const reviewed=e.s.reviewBrandRelationship_('Copper Orchard',text,{},Date.now()+90000,{});assert.equal(calls,1);assert.equal(reviewed.evidence.quote,quote);assert.equal(reviewed.evidence.method,'reviewed_source');
+ });
+ for(const bad of [
+  {name:'Other Company',quote:'Join the team at Copper Orchard.',relationship:'hiring_business'},
+  {name:'Copper Orchard',quote:'Invented hiring relationship with Copper Orchard',relationship:'hiring_business'},
+  {name:'Copper Orchard',quote:'Copper Orchard',relationship:'hiring_business'},
+  {name:'Copper Orchard',quote:'Join the team at Copper Orchard.',relationship:'tool'},
+  {name:'Copper Orchard',quote:'Join the team at Copper Orchard.',relationship:'hiring_business',extra:true},
+  [{name:'Copper Orchard',quote:'Join the team at Copper Orchard.',relationship:'hiring_business'}]
+ ])test('malformed relationship proof cannot certify a buyer: '+JSON.stringify(bad),()=>{
+  const e=env([],configured);e.s.llmAsk_=()=>({text:JSON.stringify(bad)});assert.equal(e.s.reviewBrandRelationship_('Copper Orchard','Join the team at Copper Orchard. Other Company makes tools.',{},Date.now()+90000,{}).error,'invalid');
+ });
+ test('relationship review cannot promote source authors or heading-only quotes',()=>{
+  const e=env([],configured);for(const [name,text,row] of [['AtlasWriter','Posted by AtlasWriter for an unnamed client',{contact:'@AtlasWriter'}],['Continuing Opportunities','Continuing Opportunities for freelancers',{}]]){e.s.llmAsk_=()=>({text:JSON.stringify({name,quote:text,relationship:'hiring_business'})});assert.equal(e.s.reviewBrandRelationship_(name,text,row,Date.now()+90000,{}).error,'invalid');}
+ });
+ test('relationship failure and deadline retain an incomplete scan instead of a negative',()=>{
+  const e=env([],configured),row={id:'relation-failure',company:'',_clue:true,notes:e.s.sourceNotes_('Join the team at Copper Orchard.')};e.props.GROQ_KEY='fictional';e.s.llmAsk_=system=>system.includes('Reply only that name')?{text:'Copper Orchard'}:{error:'failed'};e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'');assert.equal(e.s.brandScanState_(row).state.cursor,0);assert.notEqual(e.s.brandScanState_(row).state.status,'exhausted');let calls=0;e.s.llmAsk_=()=>{calls++;throw Error('Expired review forbidden');};assert.equal(e.s.reviewBrandRelationship_('Copper Orchard','Join the team at Copper Orchard.',{},Date.now()+3999,{}).error,'deadline');assert.equal(calls,0);
+ });
+ test('legacy brand cursors migrate without replaying completed negatives and old found names recheck',()=>{
+  const e=env([],configured),row={id:'migration',company:'',_clue:true,notes:e.s.sourceNotes_('x'.repeat(2500)+' Continuing Opportunities')},scan=e.s.brandScanState_(row);e.props.GROQ_KEY='fictional';
+  for(const status of ['pending','exhausted']){const cursor=status==='exhausted'?e.s.brandWindows_(scan.text).length:1;e.props[scan.key]=JSON.stringify({version:2,fingerprint:e.s.discoveryHash_('v2:'+scan.text),cursor,status,failures:0});const migrated=e.s.brandScanState_(row).state;assert.equal(migrated.version,3);assert.equal(migrated.cursor,cursor);assert.equal(migrated.status,status);}
+  e.props[scan.key]=JSON.stringify({version:2,fingerprint:e.s.discoveryHash_('v2:'+scan.text),cursor:2,status:'found',name:'Continuing Opportunities',foundAt:1});assert.equal(e.s.brandScanState_(row).state.cursor,1);let reads=0;e.s.llmAsk_=()=>{reads++;return{text:'NONE'};};e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'');assert.equal(reads,e.s.brandWindows_(scan.text).length-1);
+ });
+ test('cached v3 heading proof cannot bypass source relationship validation',()=>{
+  const e=env([],configured),row={id:'bad-cache',company:'',_clue:true,notes:e.s.sourceNotes_('Continuing Opportunities for designers')},scan=e.s.brandScanState_(row);e.props.GROQ_KEY='fictional';scan.state.status='found';scan.state.name='Continuing Opportunities';scan.state.foundAt=0;scan.state.evidence={name:scan.state.name,quote:scan.text,relationship:'hiring_business',method:'reviewed_source'};e.s.saveBrandScan_(scan);let reads=0;e.s.llmAsk_=()=>{reads++;return {text:'NONE'};};e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'');assert.equal(reads,1);assert.equal(e.s.brandScanState_(row).state.status,'exhausted');
+ });
+ test('visible email parser excludes executable, hidden, form, sample and testimonial data',()=>{
+  const e=env(),html='<script>let a="marysample@mail.com"</script><style>.x{content:"style@buyer.test"}</style><template>template@buyer.test</template><form><input placeholder="person@buyer.test"><a href="mailto:form@buyer.test">Contact us</a></form><div hidden>hidden@buyer.test</div><div aria-hidden="true">aria@buyer.test</div><div style="display:none">css@buyer.test</div><section class="testimonials"><a href="mailto:customer@buyer.test">Customer email</a></section><p>Contact us: office@buyer.test</p>';
+  const result=e.s.contactsFromHtml_(html,'buyer.test','https://buyer.test/contact');assert.deepEqual(plain(result.emails),['office@buyer.test']);assert.equal(result.emailCandidates[0].source_url,'https://buyer.test/contact');assert.equal(result.emailCandidates[0].person_ownership,'unconfirmed');
+ });
+ test('free mailboxes require their own explicit visible business purpose',()=>{
+  const e=env(),parse=html=>plain(e.s.contactsFromHtml_(html,'buyer.test','https://buyer.test/contact').emails);assert.deepEqual(parse('<p>marysample@mail.com</p>'),[]);assert.deepEqual(parse('<p>Contact us: <a href="mailto:office.fixture@gmail.com">Our office</a></p>'),['office.fixture@gmail.com']);assert.deepEqual(parse('<p>marysample@mail.com</p><footer>Contact us: sales@buyer.test</footer>'),['sales@buyer.test']);assert.deepEqual(parse('<p>Contact us: sales@buyer.test, marysample@mail.com</p>'),['sales@buyer.test']);
+ });
+ test('public extraction keeps page purpose isolated and binds each accepted email source',()=>{
+  const e=env([],configured);e.s.publicContactPages_=()=>{const pages=[{url:'https://buyer.test',html:'<p>marysample@mail.com</p>'},{url:'https://buyer.test/contact',html:'<p>Contact us: office@buyer.test</p>'}];pages.incomplete=false;return pages;};const result=e.s.findContactsFree_('http://buyer.test',Date.now()+90000);assert.deepEqual(plain(result.emails),['office@buyer.test']);assert.equal(result.emailCandidates[0].source_url,'https://buyer.test/contact');
+ });
+ test('organization emails require official binding and cannot borrow a review or person node',()=>{
+  const e=env(),schema=x=>'<script type="application/ld+json">'+JSON.stringify(x)+'</script>',parse=x=>plain(e.s.contactsFromHtml_(schema(x),'buyer.test','https://buyer.test').emails);
+  assert.deepEqual(parse({'@type':'Person',email:'person@buyer.test'}),[]);assert.deepEqual(parse({'@type':'Organization',url:'https://other.test',email:'other.office@gmail.com'}),[]);assert.deepEqual(parse({'@type':'Organization',url:'https://buyer.test',review:{author:{'@type':'Person',email:'reviewer@buyer.test'}}}),[]);assert.deepEqual(parse({'@type':'Organization',url:'https://buyer.test',email:'office.fixture@gmail.com'}),['office.fixture@gmail.com']);
+ });
+ test('HR and jobs mailbox eligibility follows the owner target or jobs goal',()=>{
+  const html='<p>Contact us: hr@buyer.test jobs@buyer.test careers@buyer.test recruiting@buyer.test</p>';
+  for(const [patch,allowed] of [[{},false],[{goal:'jobs',decision_roles:['Technical manager']},true],[{decision_roles:['HR director']},true],[{decision_roles:['Recruiter']},true]]){const e=env([],{...configured,...patch}),result=e.s.contactsFromHtml_(html,'buyer.test','https://buyer.test/contact');assert.equal(result.emails.length>0,allowed);if(allowed)assert.equal(result.emails[0],'hr@buyer.test');}
+  const e=env([],{...configured,goal:'jobs',decision_roles:['Recruiter']});assert.deepEqual(plain(e.s.contactsFromHtml_('<p>Careers: jobs.fixture@gmail.com</p>','buyer.test').emails),['jobs.fixture@gmail.com']);assert.deepEqual(plain(e.s.contactsFromHtml_('<script>let x="jobs.fixture@gmail.com"</script>','buyer.test').emails),[]);
+ });
+ test('privacy and legal mailbox eligibility follows explicit owner roles',()=>{
+  const html='<p>Contact us: privacy@buyer.test legal@buyer.test dpo@buyer.test</p>';
+  for(const [roles,allowed] of [[['Maintenance manager'],false],[['Privacy officer'],true],[['General counsel'],true],[['Data protection officer'],true]]){const e=env([],{...configured,decision_roles:roles}),result=e.s.contactsFromHtml_(html,'buyer.test','https://buyer.test/contact');assert.equal(result.emails.length>0,allowed);}
+  const e=env([],{...configured,decision_roles:['General counsel']});assert.deepEqual(plain(e.s.contactsFromHtml_('<p>Legal: legal.fixture@gmail.com</p>','buyer.test').emails),['legal.fixture@gmail.com']);assert.deepEqual(plain(e.s.contactsFromHtml_('<input placeholder="legal.fixture@gmail.com">','buyer.test').emails),[]);
+ });
+ test('configured HR and legal purposes permit bound organization contact points only',()=>{
+  const e=env([],{...configured,decision_roles:['HR director','Privacy officer']}),schema=JSON.stringify({'@type':'Organization',url:'https://buyer.test',contactPoint:[{'@type':'ContactPoint',contactType:'human resources',email:'jobs.fixture@gmail.com'},{'@type':'ContactPoint',contactType:'privacy',email:'privacy.fixture@gmail.com'}]});assert.deepEqual(plain(e.s.contactsFromHtml_('<script type="application/ld+json">'+schema+'</script>','buyer.test').emails),['jobs.fixture@gmail.com','privacy.fixture@gmail.com']);
+ });
+ test('unread system mailboxes remain excluded for every owner target',()=>{
+  const e=env([],{...configured,goal:'jobs',decision_roles:['HR director','Privacy officer']}),html='<p>Contact us: noreply@buyer.test abuse@buyer.test unsubscribe@buyer.test postmaster@buyer.test</p>';assert.deepEqual(plain(e.s.contactsFromHtml_(html,'buyer.test').emails),[]);
+ });
+ test('public email note preserves owner text and selected write keeps per-page evidence',()=>{
+  const e=env([fixture],configured),row=e.s.cellFillRow_(e.s.leadData_(),fixture.id),task={id:row.id,hash:e.s.cellFillHash_(row),fields:['email'],requested:['email']},cell=e.sheets.Leads.getRange(3,e.H.indexOf('email')+1);cell.setNote('Owner: use regional office');
+  const result=e.s.contactsFromHtml_('<p>Contact us: office@alpha.example</p>','alpha.example','https://alpha.example/contact');e.s.applyPublicEmailResult_(row,result);e.s.writeCellFillResult_(e.sheets.Leads,task,row);assert.equal(e.get(row.id,'email'),'office@alpha.example');assert.match(cell.getNote(),/https:\/\/alpha\.example\/contact/);assert.match(cell.getNote(),/Owner: use regional office/);assert.match(cell.getNote(),/ownership.*unconfirmed/);
+ });
+ test('native evidence fixture is pure and uses the actual generated guard functions',()=>{
+  const e=env(),before=JSON.stringify({props:e.props,grid:e.grid,timers:e.timers});assert.equal(e.s.testEvidenceGuardsNative().passed,true);assert.equal(JSON.stringify({props:e.props,grid:e.grid,timers:e.timers}),before);assert.equal(e.starts.length,0);
+ });
+
+ test('source-window boundary cannot certify a partial trailing business name',()=>{
+  const e=env([],configured),prefix='ordinary text ',text=prefix.repeat(2000),window=e.s.brandWindows_(text)[0].length,body='x'.repeat(window-' We are Copper'.length)+' We are Copperstone and need an audit.',row={id:'cut-name',company:'',_clue:true,notes:e.s.sourceNotes_(body)};e.props.GROQ_KEY='fictional';e.s.llmAsk_=(_system,source)=>({text:source.endsWith('Copper')?'Copper':'NONE'});e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'');
+ });
+
+ for(const suffix of ['stone',' Orchard'])test('source-window handoff discovers the full business '+suffix,()=>{
+  const e=env([],configured),body='x'.repeat(986)+' We are Copper'+suffix+' and need an audit.',row={id:'complete-boundary'+suffix,what_they_want:'',company:'',_clue:true,notes:e.s.sourceNotes_(body)};e.props.GROQ_KEY='fictional';let calls=0;e.s.llmAsk_=(_system,source)=>{calls++;if(calls===2)assert.equal(JSON.parse(e.props[e.s.brandScanKey_(row)]).cursor,1);return {text:source.endsWith('Copper')?'Copper':'Copper'+suffix};};e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'Copper'+suffix);assert.equal(calls,2);assert.equal(row._brandScan.foundAt,1);assert.ok(body.slice(row._brandScan.evidence.sourceStart).startsWith(row._brandScan.evidence.quote));
+ });
+ for(const version of [2,3])test('cached v'+version+' partial occurrence cannot borrow an unrelated full word',()=>{
+  const e=env([],configured),body='x'.repeat(986)+' We are Copperstone and need an audit. Later the word Copper appears alone.',row={id:'cache-boundary'+version,what_they_want:'',company:'',_clue:true,notes:e.s.sourceNotes_(body)},scan=e.s.brandScanState_(row),part=e.s.brandWindows_(body)[0];e.props.GROQ_KEY='fictional';e.props[scan.key]=JSON.stringify({...scan.state,version,fingerprint:e.s.discoveryHash_('v'+version+':'+body),status:'found',name:'Copper',foundAt:0,evidence:{name:'Copper',quote:part.slice(-194),relationship:'hiring_business',method:'explicit_source'}});let calls=0;e.s.llmAsk_=(_system,source)=>{calls++;return {text:source.endsWith('Copper')?'Copper':'Copperstone'};};e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'Copperstone');assert.equal(calls,2);assert.equal(row._brandScan.foundAt,1);
+ });
+ test('boundary handoff survives reader failure without replaying its completed first request',()=>{
+  const e=env([],configured),row={id:'failed-boundary',what_they_want:'',company:'',_clue:true,notes:e.s.sourceNotes_('x'.repeat(986)+' We are Copperstone and need an audit.')};e.props.GROQ_KEY='fictional';let calls=0;e.s.llmAsk_=()=>++calls===1?{text:'Copper'}:{error:'failed'};e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'');assert.equal(row._brandScan.cursor,1);assert.equal(row._brandScan.status,'pending');e.s.llmAsk_=(_system,source)=>{assert.ok(source.includes('Copperstone'));return {text:'Copperstone'};};e.s.findBrands_([row],Date.now()+90000);assert.equal(row.company,'Copperstone');
+ });
+ test('cached buyer proof with tampered source offset is rechecked instead of trusted',()=>{
+  const e=env([],configured),body='We are Offset Brand. Need help.',row={id:'tampered-offset',what_they_want:'',company:'',_clue:true,notes:e.s.sourceNotes_(body)};e.props.GROQ_KEY='fictional';e.s.llmAsk_=()=>({text:'Offset Brand'});e.s.findBrands_([row],Date.now()+90000);const key=e.s.brandScanKey_(row),cached=JSON.parse(e.props[key]);cached.evidence.sourceStart++;e.props[key]=JSON.stringify(cached);let calls=0;e.s.llmAsk_=()=>{calls++;return {text:'NONE'};};const next={...row,company:''};e.s.findBrands_([next],Date.now()+90000);assert.equal(next.company,'');assert.equal(calls,1);
  });
 
 }

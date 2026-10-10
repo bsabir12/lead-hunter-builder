@@ -1,3 +1,13 @@
+# 1.3.2 — 2026-10-10
+
+Company extraction requires full-word boundaries and a source quote connecting the complete name to the actual hiring or buying request. Headings, authors, tools and examples cannot substitute for that relationship. Ambiguous relationships receive a bounded exact-quote review. Names cut at a source-window edge hand off durably to the next overlap; found receipts bind the quoted occurrence to the full-source position. Legacy pending/exhausted progress migrates, while old found names recheck.
+
+Public email extraction uses visible per-page text, mailto anchors and officially bound organization data. Scripts, hidden elements, forms, examples and testimonials are excluded. Free mailboxes require their own explicit business purpose. HR/jobs and privacy/legal eligibility follow owner-configured goals and roles. Dedicated email notes and receipts retain URL/context/basis, preserve owner notes, and keep delivery/person ownership/current role/buyer intent unconfirmed. Existing populated emails are preserved; this does not claim historical revalidation.
+
+Future Hunter requests settle only a validated exact-domain raw empty Domain Search result to zero. Unique reservations and settlement receipts share an atomic ledger; prior spend and uncertain calls remain counted. Completed receipts archive into mapped append-only Log rows with exact readback before leaving the recent ledger. Credits stay labeled as Hunter units with USD cost zero; unresolved receipts never disappear. Restart, sorting, owner edits, formulas and notes fail safely. Archive months use guarded plain-text formatting and a fresh identity/ownership check before literal text writes, preventing inherited date formatting from changing their readback type; timestamp checks stay unchanged.
+
+38 builder, 293 generated-engine and 38 contact contracts pass offline. All three service profiles pass from source and the extracted ZIP; package privacy/parity and the skill validator pass. Fifty-three copied-defect controls were detected. Independent final artifact review found no release blocker. All five native fixtures passed on the exact generated candidate at 11:20:46 UTC on 10 October with zero provider requests and zero production writes. The generated Code SHA-256 was `ce1a535551190d3dce42f95b8082cd6b48a316de0de6b21fa56a7c2c91e6b7a9`.
+
 # 1.3.1 — 2026-10-10
 
 Supplied website hints now receive the same independent LLM-plus-Jev review as discovered candidates, at unchanged direct and fallback thresholds. Review can choose only the original host, uses readable homepage and source context, and accepts only a numeric candidate or explicit `NONE`. Errors, malformed replies and deadlines remain incomplete. Original URLs are preserved.

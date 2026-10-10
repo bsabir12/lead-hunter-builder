@@ -55,6 +55,10 @@ Use a new/empty output folder. Build files offline; no credentials or provider c
 
 MIT licensed. Provider APIs and platforms have their own terms and charges.
 
+### 1.3.2 source and public-email evidence
+
+Company discovery requires a complete name and a quoted relationship to the actual request; split names resume in the next source window and stale cached proof is rechecked. Public emails use visible evidence from each official page with provenance. Hidden examples and unrelated free mailboxes are excluded. HR/jobs and privacy/legal targets follow your configured goal and roles. Published contacts still need identity and delivery review. Future Hunter accounting releases only a validated empty Domain Search reservation. Completed redacted receipts archive into the Log with exact readback; historical spend and unresolved requests remain intact.
+
 ### 1.3.1 consistent supplied website checks
 
 Supplied websites use the same bounded independent review as discovered sites at the existing score thresholds. Readable evidence, an exact choice and the original host are required; unavailable checks stay incomplete. Legacy source boundaries keep owner notes out of identity evidence. Status checks distinguish queued work with unknown worker permissions and intentional manual schedules.

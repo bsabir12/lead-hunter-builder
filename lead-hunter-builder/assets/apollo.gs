@@ -144,10 +144,15 @@ function apolloRequest_(operation,subject,path,method,params,cost){
  }
  const out=apolloJson_(apolloFetch_(path,method,params),operation,[200,202]);if(cost>0)store.deleteProperty(lease);return out.body;
 }
+function apolloPeoplePayload_(lead){
+ const payload={'q_organization_domains_list[]':[professionalDomain_(lead.website)],'person_titles[]':HUNTER_ROLES.slice(),include_similar_titles:false,page:1,per_page:5};
+ // Avoid a global executive filter that would exclude owner-configured HR or specialist routes.
+ return payload;
+}
 function apolloFreePeopleRequest_(lead){
  if(!websiteIdentityConfirmed_(lead))return {state:'unconfirmed',people:[]};
  const access=apolloSearchAccess_();if(['disconnected','denied'].includes(access))return {state:access,people:[]};
- const domain=professionalDomain_(lead.website),payload={'q_organization_domains_list[]':[domain],'person_seniorities[]':['owner','founder','c_suite','vp','head','director'],'person_titles[]':HUNTER_ROLES,include_similar_titles:false,page:1,per_page:5};
+ const domain=professionalDomain_(lead.website),payload=apolloPeoplePayload_(lead);
  const res=apolloFetch_('mixed_people/api_search','post',payload),status=res.getResponseCode();
  if(status===401||status===403){rememberApolloSearchAccess_('denied');return {state:'denied',people:[]};}
  const parsed=apolloJson_(res,'people search',[200]);if(!Array.isArray(parsed.body.people))throw Error('Apollo people search response schema mismatch; no successful empty result.');rememberApolloSearchAccess_('available');return {state:'available',people:parsed.body.people};
@@ -174,7 +179,7 @@ function automaticApolloPeopleSearch_(deadline,limit){
 }
 function apolloPendingContacts_(tab){
  const all=contactRows_(tab),rows=leadData_(SpreadsheetApp.getActive().getSheetByName(TABS.leads)),settings=PropertiesService.getScriptProperties().getProperties();
- return all.filter(c=>{const lead=cellFillRow_(rows,c.lead_id);return /^-?\d+$/.test(String(c.pending_request_id))&&c.identity_status==='confirmed'&&!contactSuppressed_(c,all)&&lead&&(lead.status||'new')==='new'&&professionalDomain_(lead.website)===c.domain&&websiteIdentityConfirmed_(lead,settings);});
+ return all.filter(c=>{const lead=cellFillRow_(rows,c.lead_id);return /^-?\d+$/.test(String(c.pending_request_id))&&contactIdentityConfirmed_(c,lead)&&!contactSuppressed_(c,all)&&lead&&(lead.status||'new')==='new'&&professionalDomain_(lead.website)===c.domain&&websiteIdentityConfirmed_(lead,settings);});
 }
 function pendingApolloPhoneCount_(){if(BUSINESS_CONFIG.mode!=='assisted')return 0;return apolloPendingContacts_(contactSheets_().contacts).length;}
 function pollApolloPhonesAutomatic_(deadline,limit){
@@ -199,15 +204,16 @@ function apolloPersonId_(p){return String(p?.id||p?.person_id||'').trim();}
 function apolloCandidates_(data,lead,now){
  if(!Array.isArray(data?.people))throw Error('Apollo people search response schema mismatch; no successful empty result.');
  const domain=professionalDomain_(lead.website),people=data.people;
- return people.filter(p=>apolloPersonId_(p)&&apolloOrganizationDomain_(p)===domain).slice(0,5).map(p=>{
+ return people.filter(p=>apolloPersonId_(p)&&apolloOrganizationDomain_(p)===domain&&contactRoleMatches_(p.title)&&contactFullName_(String(p.name||[p.first_name,p.last_name||p.last_name_obfuscated].filter(Boolean).join(' ')))).slice(0,5).map(p=>{
    const name=String(p.name||[p.first_name,p.last_name||p.last_name_obfuscated].filter(Boolean).join(' ')).trim();
    return {lead_id:lead.id,contact_id:Utilities.getUuid(),company:lead.company,domain,name,role:String(p.title||''),linkedin:canonicalLinkedIn_(p.linkedin_url),identity_status:'unconfirmed',email_status:p.has_email?'available_unrevealed':'unavailable',source_urls:canonicalLinkedIn_(p.linkedin_url),checked_on:now||new Date(),note:'Apollo candidate; confirm current person, employer and role before outreach.',provider:'apollo',provider_person_id:apolloPersonId_(p),phone_status:p.has_direct_phone?'available_unrevealed':''};
  });
 }
 function apolloEmailResult_(data,before,now){
  const p=data?.person;if(!p||apolloPersonId_(p)!==before.provider_person_id||apolloOrganizationDomain_(p)!==before.domain)return {...before,email_status:'identity_mismatch',checked_on:now||new Date(),note:'Apollo returned a different person or current company; result rejected.'};
- const email=workEmail_(p.email,before.domain),status=String(p.email_status||'').toLowerCase(),name=String(p.name||before.name).trim(),linkedin=canonicalLinkedIn_(p.linkedin_url)||before.linkedin;
- return {...before,name,role:String(p.title||before.role),linkedin,email,email_status:email?(status==='verified'?'valid':status||'unverified'):'not_found',verified_on:email&&status==='verified'?(now||new Date()):'',verified_email:email&&status==='verified'?email:'',checked_on:now||new Date(),provider:'apollo',note:email?'Apollo work email; confirm identity before copying to Leads.':'Apollo found no work email for this person.'};
+ const email=namedWorkEmail_(p.email,before.domain),status=String(p.email_status||'').toLowerCase(),name=String(p.name||before.name).trim(),linkedin=canonicalLinkedIn_(p.linkedin_url)||before.linkedin;
+ const result={...before,name,role:String(p.title||before.role),linkedin,email,email_status:email?(status==='verified'?'valid':status||'unverified'):'not_found',verified_on:email&&status==='verified'?(now||new Date()):'',verified_email:email&&status==='verified'?email:'',checked_on:now||new Date(),provider:'apollo',note:email?'Apollo work email; confirm identity before copying to Leads.':'Apollo found no work email for this person.'};
+ return contactIdentityChanged_(before,result)?{...result,identity_status:'unconfirmed'}:result;
 }
 function apolloRequestId_(data){return String(data?.request_id||data?.phone_enrichment?.request_id||data?.person?.phone_enrichment?.request_id||'').trim();}
 function safePhone_(value){const s=String(value||'').trim().replace(/[()\s.-]/g,'');return /^\+?[1-9]\d{6,14}$/.test(s)?s:'';}
@@ -223,12 +229,12 @@ function apolloPhoneResult_(data,before,now){
 }
 function selectedApolloContacts_(sh,requireConfirmed){
  const ss=SpreadsheetApp.getActive(),ranges=sh.getActiveRangeList()?.getRanges()||[sh.getActiveRange()],all=contactRows_(sh),leads=leadData_(ss.getSheetByName(TABS.leads));
- return all.filter(c=>{const lead=cellFillRow_(leads,c.lead_id);return lead&&(lead.status||'new')==='new'&&websiteIdentityConfirmed_(lead)&&professionalDomain_(lead.website)===c.domain&&c.provider_person_id&&(!requireConfirmed||c.identity_status==='confirmed')&&!contactSuppressed_(c,all)&&ranges.some(r=>c._r>=r.getRow()&&c._r<=r.getLastRow())&&!sh.isRowHiddenByFilter(c._r);});
+ return all.filter(c=>{const lead=cellFillRow_(leads,c.lead_id);return lead&&(lead.status||'new')==='new'&&websiteIdentityConfirmed_(lead)&&professionalDomain_(lead.website)===c.domain&&c.provider_person_id&&(!requireConfirmed||contactIdentityConfirmed_(c,lead))&&!contactSuppressed_(c,all)&&ranges.some(r=>c._r>=r.getRow()&&c._r<=r.getLastRow())&&!sh.isRowHiddenByFilter(c._r);});
 }
 /** Approval dialogs allow edits; recheck lead eligibility and persistent suppression. */
 function currentApolloContact_(sh,before,requireConfirmed){
  const all=contactRows_(sh),current=all.find(c=>c.contact_id===before.contact_id);
- if(!current||contactSnapshot_(current)!==contactSnapshot_(before)||contactSuppressed_(current,all)||(requireConfirmed&&current.identity_status!=='confirmed'))return null;
+ if(!current||contactSnapshot_(current)!==contactSnapshot_(before)||contactSuppressed_(current,all)||(requireConfirmed&&!contactIdentityConfirmed_(current)))return null;
  const lead=cellFillRow_(leadData_(SpreadsheetApp.getActive().getSheetByName(TABS.leads)),current.lead_id);
  return lead&&(lead.status||'new')==='new'&&websiteIdentityConfirmed_(lead)&&professionalDomain_(lead.website)===current.domain?current:null;
 }
@@ -240,7 +246,7 @@ function findApolloPeopleSelected(){
  const tab=contactSheets_().contacts;let all=contactRows_(tab),done=0;
  for(const lead of ready){
    const fresh=cellFillRow_(leadData_(sh),lead.id);if(!fresh||(fresh.status||'new')!=='new'||!websiteIdentityConfirmed_(fresh)||cellFillHash_(fresh)!==cellFillHash_(lead))continue;
-   const domain=professionalDomain_(lead.website),before=cellFillHash_(lead),payload={'q_organization_domains_list[]':[domain],'person_seniorities[]':['owner','founder','c_suite','vp','head','director'],'person_titles[]':HUNTER_ROLES,include_similar_titles:false,page:1,per_page:5};
+   const domain=professionalDomain_(lead.website),before=cellFillHash_(lead),payload=apolloPeoplePayload_(lead);
    let result;try{result=apolloRequest_('search',domain,'mixed_people/api_search','post',payload,0);rememberApolloSearchAccess_('available');}catch(e){
      if(/HTTP (?:401|403)/.test(String(e)))rememberApolloSearchAccess_('denied');
      APOLLO_APPROVAL=null;
@@ -254,10 +260,10 @@ function findApolloPeopleSelected(){
 }
 function enrichApolloEmailsSelected(){
  const ss=SpreadsheetApp.getActive(),ui=SpreadsheetApp.getUi(),sh=ss.getActiveSheet();if(sh.getName()!=='Contacts')return ui.alert('Select rows in Contacts.');
- const chosen=selectedApolloContacts_(sh,false).filter(c=>!contactCanPublish_(c));if(!chosen.length||chosen.length>5)return ui.alert('Select 1–5 Apollo contacts tied to new leads.');
+ const chosen=selectedApolloContacts_(sh,true).filter(c=>!contactCanPublish_(c));if(!chosen.length||chosen.length>5)return ui.alert('Select 1–5 Apollo contacts tied to new leads.');
  if(!approveApollo_('Apollo — get work email',chosen.map(c=>(c.name||'Apollo candidate')+' · '+c.company),'email',chosen.length,{contacts:chosen.map(c=>c.contact_id)}))return;
  for(const before of chosen){
-   if(!currentApolloContact_(sh,before,false))continue;
+   if(!currentApolloContact_(sh,before,true))continue;
    const params={id:before.provider_person_id,reveal_personal_emails:false,reveal_phone_number:false,run_waterfall_email:false,run_waterfall_phone:false};
    let result;try{result=apolloEmailResult_(apolloRequest_('email',before.contact_id,'people/match','post',params,1),before,new Date());}catch(e){result={...before,note:redactSecretText_(e.message)};}commitContact_(sh,before,result);
  }
