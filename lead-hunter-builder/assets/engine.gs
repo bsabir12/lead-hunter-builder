@@ -61,7 +61,7 @@ const COL_NOTES = {
   outreach: ['Optional owner-managed follow-up date, last message date and thread link', ['follow_up_due', 'last_touch', 'thread']],
   lookup: ['Found automatically for strong leads: website, emails and decision makers, each checked by Jev. People for Message today / Send a sample first come from Google (Apify, estimated cost depends on your provider plan; monthly limit in Rules); others from configured search providers. lookup shows how each was found', ['people', 'lookup']]
 };
-const STEP = { now: 'Message today', sample: 'Send a sample first', warm: 'Check back later', decide: 'You decide', job: 'Consider the job', skip: 'Skip' };
+const STEP = { now: 'Message today', sample: 'Send a sample first', warm: 'Check back later', decide: 'You decide', eligibility: 'Check applicant eligibility', job: 'Consider the job', skip: 'Skip' };
 const NEXT_STEPS = Object.values(STEP);
 const CHANNELS = ['Email', 'LinkedIn DM', 'X DM', 'Upwork proposal', 'Find contact first'];
 const STATUSES = ['new', 'drafted', 'sent', 'replied', 'call booked', 'trial', 'client', 'lost', 'no reply'];
@@ -112,6 +112,7 @@ function onOpen() {
       .addItem('Fill selected cells…', 'fillSelectedCells')
       .addItem('Find public phones — free', 'findPublicPhonesSelected')
       .addItem('Refresh contact options — free', 'refreshContactOptions')
+      .addItem('Record selected applicant eligibility…', 'reviewSelectedApplicantEligibility')
       .addItem('Fill missing details — all leads…', 'fillMissing')
       .addItem('Refresh decision-makers for selected leads…', 'redoPeopleSelected')
       .addItem('Find work contacts for selected leads…', 'findWorkContactsSelected')
@@ -469,6 +470,119 @@ function bareDomain_(text) {
 
 
 function isUpwork_(source) { return /^upwork/.test(String(source || '')); }
+
+const APPLICANT_ELIGIBILITY_MARKER = '[LH applicant eligibility v1] ';
+
+function canonicalApplicantLocation_(value) {
+  const s=String(value||'').toLowerCase().replace(/\bu\.\s*s\.(?:\s*a\.)?/g,'united states').replace(/\bu\.\s*k\.?/g,'united kingdom').replace(/[^a-z0-9]+/g,' ').trim().replace(/^the\s+/,'');
+  const aliases={us:'united states',usa:'united states','u s':'united states','u s a':'united states','united states of america':'united states',uk:'united kingdom','u k':'united kingdom',gb:'united kingdom','great britain':'united kingdom',pk:'pakistan',uae:'united arab emirates'};
+  return aliases[s]||s;
+}
+
+function applicantLocationValues_(value,out) {
+  out=out||[];
+  if(value===undefined||value===null||value==='')return out;
+  if(Array.isArray(value)){value.forEach(v=>applicantLocationValues_(v,out));return out;}
+  if(typeof value==='object'){
+    for(const k of ['name','label','value','country','countryName','countryCode','code'])if(value[k])applicantLocationValues_(value[k],out);
+    return out;
+  }
+  String(value).split(/\s*(?:,|;|\/|\bor\b|\band\b)\s*/i).forEach(v=>{const c=canonicalApplicantLocation_(v);if(c&&!out.includes(c))out.push(c);});
+  return out;
+}
+
+function structuredApplicantEligibility_(item) {
+  if(!item||typeof item!=='object')return null;
+  const fields=['allowedCountries','allowedCountryCodes','eligibleCountries','applicantCountries','freelancerCountries','talentCountries','allowedLocations','applicantLocations'];
+  const locations=[];
+  fields.forEach(k=>{if(Object.prototype.hasOwnProperty.call(item,k))applicantLocationValues_(item[k],locations);});
+  return locations.length?{status:'restricted',locations,evidence:'provider structured applicant-country field'}:null;
+}
+
+function applicantEligibilityText_(text) {
+  const t=String(text||'').replace(/\bU\.\s*S\.(?:\s*A\.)?/gi,'United States').replace(/\bU\.\s*K\.?/gi,'United Kingdom').replace(/\s+may\s+apply\b/gi,'').replace(/\s+/g,' ').trim();
+  if(!t)return null;
+  const subjects='(?:freelancers?|applicants?|candidates?|contractors?|talent)';
+  const places='([^.;:!?]{2,80}?)';
+  const patterns=[
+    new RegExp('only\\s+'+subjects+'\\s+(?:who\\s+are\\s+)?(?:located|based|residing|living)\\s+in\\s+'+places+'(?:\\s+may\\s+apply)?(?:[.;:!?]|$)','i'),
+    new RegExp(subjects+'\\s+(?:must|need\\s+to)\\s+be\\s+(?:located|based|residing|living)\\s+in\\s+'+places+'(?:[.;:!?]|$)','i'),
+    new RegExp('only\\s+'+places+'[- ]based\\s+'+subjects+'(?:[.;:!?]|$)','i'),
+    new RegExp(places+'[- ]based\\s+'+subjects+'\\s+only(?:[.;:!?]|$)','i')
+  ];
+  for(const re of patterns){const m=t.match(re);if(!m)continue;const locations=applicantLocationValues_(m[1]);if(locations.length)return {status:'restricted',locations,evidence:'explicit source wording'};}
+  return null;
+}
+
+function applicantEligibilityFromNotes_(notes) {
+  const lines=String(notes||'').split(/\r?\n/).filter(line=>line.startsWith(APPLICANT_ELIGIBILITY_MARKER));
+  if(lines.length!==1)return null;
+  try{
+    const r=JSON.parse(lines[0].slice(APPLICANT_ELIGIBILITY_MARKER.length));
+    if(!r||!['eligible','ineligible','restricted'].includes(r.status))return null;
+    return {status:r.status,locations:applicantLocationValues_(r.locations||[]),evidence:String(r.evidence||'reviewed source').slice(0,160),reviewed:String(r.reviewed||'')};
+  }catch(e){return null;}
+}
+
+function applicantEligibilityNote_(notes,record) {
+  const kept=String(notes||'').split(/\r?\n/).filter(line=>!line.startsWith(APPLICANT_ELIGIBILITY_MARKER));
+  if(record)kept.push(APPLICANT_ELIGIBILITY_MARKER+JSON.stringify({status:record.status,locations:applicantLocationValues_(record.locations||[]),evidence:String(record.evidence||'').slice(0,160),reviewed:record.reviewed||new Date().toISOString()}));
+  return kept.filter(Boolean).join('\n');
+}
+
+function applicantEligibility_(row,rules) {
+  const reviewed=applicantEligibilityFromNotes_(row&&row.notes);
+  if(reviewed&&reviewed.status==='eligible')return Object.assign({},reviewed,{eligible:true});
+  if(reviewed&&reviewed.status==='ineligible')return Object.assign({},reviewed,{eligible:false,providerLocations:applicantLocationValues_(rules&&rules.providerLocations||row&&row._providerLocations||[])});
+  const restriction=reviewed||(row&&row._applicantEligibility)||applicantEligibilityText_([row&&row.what_they_want,row&&row._text,sourcePost_(row||{})].filter(Boolean).join(' '));
+  if(!restriction||restriction.status!=='restricted')return isUpwork_(row&&row.source)?{status:'unknown',eligible:null,evidence:'Upwork applicant-country field was not captured'}:{status:'not_applicable',eligible:null};
+  const allowed=applicantLocationValues_(restriction.locations||[]),provider=applicantLocationValues_(rules&&rules.providerLocations||row&&row._providerLocations||[]);
+  if(allowed.some(v=>['worldwide','global','anywhere','all countries','remote'].includes(v)))return Object.assign({},restriction,{locations:allowed,eligible:true});
+  if(!provider.length)return Object.assign({},restriction,{locations:allowed,eligible:null,evidence:restriction.evidence+'; provider location is not configured'});
+  return Object.assign({},restriction,{locations:allowed,eligible:allowed.some(v=>provider.includes(v)),providerLocations:provider});
+}
+
+function applicantEligibilityReason_(eligibility) {
+  const locations=(eligibility.locations||[]).join(', ')||'the listed location';
+  return eligibility.eligible===false?`applicants must be in ${locations}; provider is in ${(eligibility.providerLocations||[]).join(', ')||'another location'}`:eligibility.evidence||'applicant eligibility needs review';
+}
+
+function applyApplicantEligibilityGate_(result,row,rules) {
+  const e=applicantEligibility_(row,rules),out=Object.assign({},result);
+  if(e.eligible===false){
+    Object.assign(out,{play:'skip',ai_route:'eligibility_ineligible',next_step:STEP.skip,why:'Applicant ineligible: '+applicantEligibilityReason_(e),missing:'',channel:'',what_to_say:'',lookup:'',_clue:false});
+  }else if(e.status==='unknown'||(e.status==='restricted'&&e.eligible===null)){
+    const missing=String(out.missing||'').split(/\s*,\s*/).filter(Boolean).filter(v=>v!=='applicant location eligibility');
+    missing.unshift('applicant location eligibility');
+    Object.assign(out,{play:'review',ai_route:'eligibility_review',next_step:STEP.eligibility,why:'Applicant eligibility not captured — check the live Upwork post'+(out.why?' · '+out.why:''),missing:missing.join(', '),lookup:'',what_to_say:'',_clue:false});
+  }
+  return out;
+}
+
+function reviewSelectedApplicantEligibility() {
+  const ss=SpreadsheetApp.getActive(),sh=ss.getActiveSheet(),ui=SpreadsheetApp.getUi();
+  if(!sh||sh.getName()!==TABS.leads)return ui.alert('Select lead rows','Open Leads and select one or more Upwork lead rows.',ui.ButtonSet.OK);
+  const range=ss.getActiveRange(),first=Math.max(range.getRow(),LEAD_FIRST_ROW),last=range.getLastRow();
+  if(last<LEAD_FIRST_ROW)return ui.alert('Select lead rows','Select one or more Upwork lead rows.',ui.ButtonSet.OK);
+  const answer=ui.prompt('Record applicant eligibility','Enter eligible, ineligible: allowed country/countries, or clear. Example: ineligible: United States. This records your review; it makes no provider request.',ui.ButtonSet.OK_CANCEL);
+  if(answer.getSelectedButton()!==ui.Button.OK)return;
+  const raw=String(answer.getResponseText()||'').trim(),lower=raw.toLowerCase();let record=null;
+  if(lower==='eligible')record={status:'eligible',locations:[],evidence:'owner reviewed live source'};
+  else if(/^ineligible\s*:/i.test(raw)){const locations=applicantLocationValues_(raw.replace(/^ineligible\s*:/i,''));if(!locations.length)return ui.alert('Add the allowed location','Example: ineligible: United States',ui.ButtonSet.OK);record={status:'ineligible',locations,evidence:'owner reviewed live source'};}
+  else if(lower!=='clear')return ui.alert('Use a supported value','Enter eligible, ineligible: country/countries, or clear.',ui.ButtonSet.OK);
+  const R=rules_(),data=leadData_(sh);let changed=0,ignored=0;
+  for(let sheetRow=first;sheetRow<=last;sheetRow++){
+    const at=sheetRow-LEAD_HEADER_ROW,row=Object.fromEntries(LEAD_COLS.map((c,k)=>[c,data[at]&&data[at][k]!==undefined?data[at][k]:'']));
+    if(!row.id||!isUpwork_(row.source)){ignored++;continue;}
+    row._r=at;row.notes=applicantEligibilityNote_(row.notes,record);
+    const e=applicantEligibility_(row,R);
+    if(e.eligible===false)Object.assign(row,{next_step:STEP.skip,why:'Applicant ineligible: '+applicantEligibilityReason_(e),missing:'',channel:'',what_to_say:'',lookup:''});
+    else if(e.eligible===true)Object.assign(row,{next_step:STEP.decide,why:'Applicant eligibility confirmed by owner; review the retained score before applying',missing:String(row.missing||'').split(/\s*,\s*/).filter(v=>v&&v!=='applicant location eligibility').join(', '),channel:'Upwork proposal',lookup:''});
+    else Object.assign(row,{next_step:STEP.eligibility,why:'Applicant eligibility not captured — check the live Upwork post',missing:'applicant location eligibility',lookup:'',what_to_say:''});
+    writeLeadFields_(sh,row,['notes','next_step','why','missing','channel','what_to_say','lookup']);changed++;
+  }
+  SpreadsheetApp.flush();ui.alert('Applicant eligibility saved',`${changed} Upwork lead${changed===1?'':'s'} updated${ignored?`; ${ignored} non-Upwork/empty row${ignored===1?'':'s'} ignored`:''}. No provider request or credit was used.`,ui.ButtonSet.OK);
+}
 
 
 function channel_(row) {
@@ -1221,13 +1335,15 @@ function normaliseRaw_(source, items) {
   if (isUpwork_(source)) return items.map(i => {
     const site = arr(i.extractedUrls).find(u => !TOOL_DOMAINS.test(u)) || bareDomain_(i.description);
     const pay = i.budgetAmount ? `$${i.budgetAmount} fixed` : (i.hourlyBudgetMax ? `$${i.hourlyBudgetMin || '?'}-${i.hourlyBudgetMax}/h` : '');
+    const eligibility=structuredApplicantEligibility_(i),notes=applicantEligibilityNote_(sourceNotes_(i.description),eligibility);
     return {
       id: 'up:' + i.jobId, signal: 'upwork job', company: site ? site.replace(/^https?:\/\/(www\.)?/, '').split('/')[0] : '',
       what_they_want: i.title, website: site, contact: arr(i.extractedEmails).join(', '),
       contact_type: site ? 'website' : 'upwork proposal', country: i.clientCountry,
       pay: `${pay} · client spent $${Math.round(i.clientTotalSpent || 0)} · ${i.totalApplicants || 0} applicants`,
       posted: i.publishTime, link: i.url, _hourlyMax: i.hourlyBudgetMax, _fixed: i.budgetAmount, _applicants: i.totalApplicants,
-      notes: sourceNotes_(i.description),
+      notes,
+      _applicantEligibility:eligibility,
       _text: [i.title, cut(i.description, SOURCE_TEXT_LIMIT)].join(' ')
     };
   });
@@ -1288,13 +1404,15 @@ function rules_() {
   return {restricted:list('restricted_words'),spam:list('spam_words'),agency:[],industries:[],sellers:[],
     maxEmployees:n('max_employees')||Infinity,minHourly:n('min_hourly_usd'),minFixed:n('min_fixed_usd'),
     monthlyBudget:n('monthly_budget_usd'),peopleBudget:n('people_search_monthly_usd'),partnerMaxEmployees:Infinity,
-    maxPostAgeDays:n('max_post_age_days')||Infinity,countries:list('target_countries')};
+    maxPostAgeDays:n('max_post_age_days')||Infinity,countries:list('target_countries'),providerLocations:list('provider_locations')};
 }
 
 function flag_(l, R) {
   const t = ' ' + String(l._text || '').toLowerCase() + ' ';
   const has = w => new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`).test(t);
   let w;
+  const eligibility=applicantEligibility_(l,R);
+  if(eligibility.eligible===false)return 'skip: applicant ineligible ('+applicantEligibilityReason_(eligibility)+')';
   if ((w = R.restricted.find(has))) return `skip: restricted (${w})`;
   if ((w = R.spam.find(has))) return `skip: spam pattern (${w})`;
   if (Number(l.employees) > R.maxEmployees) return `skip: ${l.employees} staff`;
@@ -1336,7 +1454,8 @@ function reapplyRules() {
   const idx = c => LEAD_COLS.indexOf(c);
   for (let r = 1; r < data.length; r++) {
     if (data[r][idx('status')] !== 'new' || data[r][idx('next_step')] === STEP.skip) continue;
-    const l = { company: data[r][idx('company')], industry: data[r][idx('industry')], employees: data[r][idx('employees')], _text: [data[r][idx('what_they_want')], data[r][idx('company')]].join(' ') };
+    const l=Object.fromEntries(LEAD_COLS.map((c,k)=>[c,data[r][k]]));
+    l._text=[l.what_they_want,l.company,l.industry,l.pay,sourcePost_(l)].join(' ');l._providerLocations=R.providerLocations;
     const f = flag_(l, R);
     if (f.startsWith('skip')) { sh.getRange(leadSheetRow_(r),leadCol_(sh,'next_step')).setValue(STEP.skip); sh.getRange(leadSheetRow_(r),leadCol_(sh,'why')).setValue('rule: ' + f.slice(6).trim()); }
   }
@@ -1459,11 +1578,11 @@ function jevDerive_(a,row) {
   const good=BUSINESS_CONFIG.fit.filter(c=>a[c.key].noul>=0.7).map(c=>c.label);
   const missing=BUSINESS_CONFIG.readiness.filter(c=>a[c.key].noul<0.5).map(c=>c.label);
   if(!row.contact&&!row.people)missing.push('verified contact');
-  return {match_pct:siteReview?'':match,readiness_pct:siteReview?'':ready,next_step,confidence,
+  return applyApplicantEligibilityGate_({match_pct:siteReview?'':match,readiness_pct:siteReview?'':ready,next_step,confidence,
     why:siteReview?'Website identity unconfirmed; scores withheld pending source review':uncertain?'Source author/buying intent unclear; review evidence':noApproach?'No supported buying approach; review before contact':good.length?'AI-assessed fit: '+good.join(' · '):'Fit criteria have weak support; review source',
     missing:missing.join(', '),channel:channel_(row),what_to_say:a.pitch.choice==='direct_fit'?'Respond to their stated need':a.pitch.choice==='exploratory'?'Confirm the need before proposing':'',
     lookup:uncertain||noApproach?'review: confirm source identity and buying approach before contact research':BUSINESS_CONFIG.mode==='assisted'&&LOOKUP_STEPS.includes(next_step)?'todo · ask: configured'+(isUpwork_(row.source)&&!row.company&&validProbability_(a.identity_clue?.noul)&&a.identity_clue.noul>=0.8?' · business identity needs lookup':''):'',
-    play:next_step===STEP.skip?'skip':next_step===STEP.now?'pitch_now':'review',ai_route:'new',ai_pitch:a.pitch.choice,ai_lead_type:poster.choice};
+    play:next_step===STEP.skip?'skip':next_step===STEP.now?'pitch_now':'review',ai_route:'new',ai_pitch:a.pitch.choice,ai_lead_type:poster.choice},row,{providerLocations:row._providerLocations||[]});
 }
 
 function fetchSites_(rows, max, deadline) {
@@ -1679,7 +1798,7 @@ function scoreRows_(rowIdx, deadline) {
   const ss = SpreadsheetApp.getActive();
   const sh = ss.getSheetByName(TABS.leads);
   const data = leadData_(sh);
-  const partnerMax=rules_().partnerMaxEmployees;
+  const scoringRules=rules_(),partnerMax=scoringRules.partnerMaxEmployees;
   const t0 = Date.now();
   const res = { done: 0, attempted: 0, errors: 0, cost: 0, plays: {}, secs: 0, ids: [] };
   const stopAt = Math.min(deadline || t0 + 270000, t0 + 270000);
@@ -1700,7 +1819,7 @@ function scoreRows_(rowIdx, deadline) {
       LEAD_COLS.forEach((col, i) => { row[col] = data[r][i]; });
       const post = isCold_(row)?String(row.notes||'').split('\nHypothesis')[0]:String(row.notes || '').startsWith('post: ') ? String(row.notes).slice(6) : '';
       row._text = [row.what_they_want, row.company, row.industry, row.pay, post].join(' ');
-      row._r = r; row._partnerMaxEmployees=partnerMax; row._scoreBefore = Object.assign({}, row);
+      row._r = r; row._partnerMaxEmployees=partnerMax; row._providerLocations=scoringRules.providerLocations; row._scoreBefore = Object.assign({}, row);
       return row;
     });
     try { ss.toast(`Scoring ${k + 1}–${k + pair.length} of ${rowIdx.length}…`, 'Lead Hunter', 20); } catch (e) {  }
@@ -3344,6 +3463,7 @@ const DEFAULT_RULES = [
   ['min_hourly_usd',BUSINESS_CONFIG.rules.min_hourly_usd,'Hourly floor in USD; 0 means none'],
   ['min_fixed_usd',BUSINESS_CONFIG.rules.min_fixed_usd,'Fixed budget floor in USD; 0 means none'],
   ['target_countries',BUSINESS_CONFIG.rules.countries.join(', '),'Empty accepts any location'],
+  ['provider_locations',BUSINESS_CONFIG.rules.provider_locations.join(', '),'Where the freelancer or team may legally apply from; separate from target/client countries'],
   ['max_post_age_days',BUSINESS_CONFIG.rules.max_post_age_days,'Opportunity age limit; 0 means no maximum'],
   ['people_search_monthly_usd',BUSINESS_CONFIG.budget.people_monthly_usd,'People search sublimit; 0 disables paid people searches'],
   ['monthly_budget_usd',BUSINESS_CONFIG.budget.monthly_usd,'Recorded Apify/Jev monthly budget; 0 disables paid work']

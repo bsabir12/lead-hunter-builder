@@ -1,3 +1,13 @@
+# 1.4.0 — 2026-10-11
+
+The skill now guides installation through a usable first lead and owner handover instead of stopping at generated files. The public README and START-HERE provide one shareable link and one beginner prompt. The generated OWNER-GUIDE includes native checks, a representative-lead gate, cost separation and an everyday-use checklist.
+
+Service businesses can start with a bounded Upwork/Apify pilot and reuse the same source-adapter contract for other marketplaces, RFP boards, communities and social requests. The contract preserves full source evidence and stable IDs, deduplicates before scoring/contact work, uses typed Jev judgments, confirms the company website, and separates decision-maker identity from work-email evidence. Hunter and Apollo remain capability-checked, separately capped contact tools; discovery never submits proposals or sends outreach.
+
+Applicant geography is now distinct from client/target geography. The Upwork adapter preserves supported structured allowed-country fields and parses explicit brief restrictions. Incompatible restrictions skip before contact work; missing evidence stays at **Check applicant eligibility**. The owner can record a live review without a provider request. Provider locations are validated profile rules, and U.S.-only, matching, missing, structured and non-Upwork paths have regression coverage.
+
+40 builder, 299 generated-engine and 38 contact checks pass offline. JavaScript syntax, internal documentation links, skill metadata and the skill-creator validator pass. The production counterpart was deployed and the first U.S.-only Upwork lead was recorded as ineligible; it changed to Skip, cleared contact/proposal work and used no provider credit. Offline checks do not establish a public installer's provider access, live actor schema, external charge or contact accuracy.
+
 # 1.3.2 — 2026-10-10
 
 Company extraction requires full-word boundaries and a source quote connecting the complete name to the actual hiring or buying request. Headings, authors, tools and examples cannot substitute for that relationship. Ambiguous relationships receive a bounded exact-quote review. Names cut at a source-window edge hand off durably to the next overlap; found receipts bind the quoted occurrence to the full-source position. Legacy pending/exhausted progress migrates, while old found names recheck.

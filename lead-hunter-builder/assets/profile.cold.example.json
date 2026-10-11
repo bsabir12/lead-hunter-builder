@@ -55,6 +55,7 @@
   },
   "rules": {
     "countries": [],
+    "provider_locations": [],
     "restricted_words": [],
     "spam_words": [],
     "max_employees": 0,

@@ -8,7 +8,7 @@ Before choosing sources, assess demand/cold/mixed/limited suitability using cold
 | --- | --- | --- |
 | Goal: clients, freelance jobs, partnerships, other | Determines signals, criteria and channel | Propose a goal from the first answers |
 | Services, first offer, public proof/portfolio | Defines fit and safe later drafts | Leave proof blank; don't invent packages or prices |
-| Buyer type, geography, size, decision roles | Defines searches and optional exclusions | Keep broad; confirm before hard filtering |
+| Buyer type, target geography, provider/applicant location, size, decision roles | Defines searches, applicant eligibility and optional exclusions | Keep buyer geography broad; leave provider location blank only when no job platform needs it |
 | What is good work? What should be excluded? | Builds observable criteria | Recommend 3–5 fit criteria, with reasons |
 | Signs they can act now | Builds readiness criteria | Recommend 2–4 signals of a workable opportunity |
 | Useful service-specific details | Adds only optional fields that affect qualification/action | Offer a few examples; none is valid |
@@ -28,7 +28,7 @@ The full example is `assets/profile.example.json`; the generator validates and r
 - `mode`: `manual` or `assisted`. Manual mode disables provider credential access and paid discovery, even if keys were saved previously. Scores can be entered by the user from the agreed criteria. Assisted mode enables optional providers, still governed by zero-default budgets.
 - `fit` and `readiness`: 1–8 criteria each, with unique lowercase `key`, readable `label`, `evidence` describing an observable positive signal, and positive `weight`. Weights need not sum to one; the generator normalizes them. “Not regulated” is a poor criterion; write the actual acceptable operating context.
 - `priority`: `match_weight`, `readiness_weight`, `freshness_weight` sum to one; `half_life_days` > 0. Defaults .45/.30/.25 and 7.
-- `rules`: `countries`, `restricted_words`, `spam_words`, `max_employees`, `min_hourly_usd`, `min_fixed_usd`, `max_post_age_days`. Empty country list accepts any. No hidden exclusion by unfamiliar company name.
+- `rules`: `countries`, `provider_locations`, `restricted_words`, `spam_words`, `max_employees`, `min_hourly_usd`, `min_fixed_usd`, `max_post_age_days`. `countries` describes desired buyers/clients. `provider_locations` describes where the freelancer or team may legally apply from and is checked separately against platform eligibility. Leave it empty when applicant geography does not apply; Upwork rows without captured eligibility then remain for owner review. No hidden exclusion by unfamiliar company name.
 - `decision_roles`: role names useful for this buyer (e.g. owner, operations director, finance manager).
 - `budget`: `monthly_usd` includes the starter's recorded Apify/Jev charges; `people_monthly_usd` is an additional sublimit, not extra permission outside the total.
 - `schedule`: desired `days` (uppercase weekday names), `hour` (0–23), IANA `timezone`. The generator records the plan but never installs a trigger.

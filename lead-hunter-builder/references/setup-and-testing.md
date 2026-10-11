@@ -2,6 +2,10 @@
 
 Read this before generating a project or working in a live sheet. Separate code generation, native checks and paid integration validation: they prove different things.
 
+## Guided completion contract
+
+The assistant owns the process through a usable first result when the environment allows it. Completion requires: a validated private profile; generated files; passing offline checks; an installed or fully prepared Google Sheet; passing native no-spend checks; one representative imported lead or an explicitly approved bounded live pilot; a reviewed row whose next action or blocked reason is clear; sources, budgets and schedules in the intended state; and an everyday-use handover. Record unavailable permissions or integrations plainly. Do not finish merely because generation succeeded.
+
 ## Set up the owner's project
 
 1. Generate a personalized build using the validated profile. Use a new output folder. The assistant should do this, not ask a beginner to type terminal commands when execution is available.
@@ -35,9 +39,11 @@ Also inspect the actual sheet: correct row 1 progress, row 2 headers, metrics to
 
 ## Gate 3: small live pilot, owner-approved
 
-Before running, present the proposed source/queries, result limit, actual actor minimum cap, estimated charge, monthly cap, provider credits and what will be written. Ask only for authorization not already given. Use the user's own accounts. No need to connect every optional provider.
+Before running, present the proposed source/queries, result limit, provider event/result ceiling, separate Apify platform-resource allowance when applicable, actual actor minimum cap, estimated total charge, monthly cap, provider credits and what will be written. Ask only for authorization not already given. Use the user's own accounts. No need to connect every optional provider.
 
 Inspect each returned lead: original request and URL, correct buyer, actual source date, safe import, no duplicates, scoring evidence and appropriate channel. Choose one deliberately poor lead and one uncertain lead to verify review/skip behavior. Sort while a pending result is being collected on the test copy. Verify progress reaches a terminal or explained paused state, provider charges appear once, and a missing website/person is not reported as a confirmed fact.
+
+For Upwork or another application marketplace, also verify applicant eligibility. Keep buyer/client location distinct from where the freelancer or team may apply. A missing restriction stays at **Check applicant eligibility**; an incompatible explicit restriction becomes **Skip** and clears proposal/contact work. Use **Update lead details → Record selected applicant eligibility** after checking the live listing. The action records evidence and makes no provider call.
 
 Treat an invalid parser field, API response, permissions error or stale pricing as an unresolved integration. Disable that source and repair/test it. Do not widen searches or install a schedule to compensate for a failed pilot.
 

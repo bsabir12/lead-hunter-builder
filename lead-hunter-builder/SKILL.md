@@ -2,12 +2,18 @@
 name: lead-hunter-builder
 description: "Build a personalized lead hunting Google Sheet for a business, freelancer or team. Use when someone wants a lead tracker, cold prospect list, company discovery, professional-contact research, fit scoring, priorities, budgets and recurring searches, or wants to adapt that workflow to an existing sheet. Interviews beginners, generates a configurable Apps Script starter, and guides setup and validation. Not for merely writing outreach, buying lead lists or sending messages."
 metadata:
-  version: "1.3.2"
+  version: "1.4.0"
 ---
 
 # Lead Hunter Builder
 
 Assess whether a prospecting sheet fits the business, then build the appropriate demand, cold or mixed workflow. The starter carries the durable queues, stable lead IDs, scoped cell filling and progress reporting from Lead Hunter; its business criteria are configurable. It is a starting implementation, not a promise that every business or scraper works unchanged.
+
+## Own guided completion
+
+Treat a request to build Lead Hunter as authorization to guide the installation through a usable first result. Do not stop after generating files. Complete the profile, choose a suitable acquisition route, generate and test the project, help create or safely adapt the Google Sheet, run native no-spend checks, import one representative lead or run an explicitly approved bounded live pilot, review the resulting row with the owner, and hand over everyday controls. If direct Google access is unavailable, prepare every artifact and guide the remaining clicks one at a time without claiming they were completed.
+
+The normal completion state is a working sheet with its first reviewable lead, tested rules, sources disabled or deliberately enabled, explicit budgets, no unexplained progress state, and a short owner handover. A generated ZIP or Apps Script file alone is incomplete.
 
 ## Start with the person
 
@@ -19,11 +25,15 @@ Do not ask for API keys, passwords or billing details in chat. The user enters t
 
 Read [cold-prospecting.md](references/cold-prospecting.md) before promising a design. Assess how buyers are identifiable, what facts distinguish a suitable customer, how the buying process works and whether research costs suit the deal value. Recommend demand, cold, mixed or limited fit, explaining the gaps. A lack of public buying requests does not disqualify a business. A database match does not establish a need. In cold/mixed builds use structural fit criteria and keep unsupported readiness Unknown. Record the recommendation and limitations in `prospecting`; the cold profile example provides its schema.
 
+For freelancers, agencies and other service sellers, test an explicit service-request source first when it has suitable demand. Upwork through a reviewed Apify actor is the default first candidate: collect a small bounded sample, preserve the complete brief, deduplicate by stable post identity, check applicant eligibility, then let Jev judge the buyer/request, business clue, service fit, readiness and supported next action. Extract or research a company name only from complete source evidence. Confirm the official website before contact research. Find a relevant current decision-maker from the source author/job poster, an official team page, a public professional profile or an allowed people-search endpoint; then use public work-email evidence, Hunter or Apollo within separate capabilities and caps. Hunter can find or verify work email but does not replace people search. Apollo is used only when the owner's key can access the required endpoint. Discovery never submits a proposal or sends outreach.
+
+Add another marketplace, RFP board, community or social-request platform through the same pipeline only after a source-specific pilot. Each adapter must preserve the full request, stable platform ID, public URL, actual posting date, buyer clues, applicant restrictions, budget and competition fields when the provider supplies them. It must fail visibly on schema drift and pass deduplication, eligibility and malformed-record tests. Do not create a second one-off workflow for each platform.
+
 ## Design around buying evidence
 
 Read [sources.md](references/sources.md) when selecting sources. Separate an explicit request for help, a timing signal, and a directory prospect. A job listing does not prove openness to an agency; an active advertisement does not prove the advertiser needs new creatives. Recommend one or two sources with a small pilot, not every connector available. Check current official provider docs, actor input/output and pricing before recommending or enabling paid automation. Manual CSV import is a useful complete first stage when accounts or budget are missing.
 
-Define a small set of observable, business-specific fit and readiness criteria. Explain each criterion, exclusion and weight. Geography, company size, pay floors and age limits are optional owner choices. Never import the original agency's DTC, Meta, recruiter or company-name rules as universal defaults. Treat unknown evidence as unknown; finite business-role categories can accept new names without accumulating a blacklist. Hiring intent remains unknown when the source does not explicitly support it, including for a well-matched company.
+Define a small set of observable, business-specific fit and readiness criteria. Explain each criterion, exclusion and weight. Target/client geography and provider/applicant geography are separate rules. Company size, pay floors and age limits are optional owner choices. Never import the original agency's DTC, Meta, recruiter or company-name rules as universal defaults. Treat unknown evidence as unknown; finite business-role categories can accept new names without accumulating a blacklist. Hiring intent remains unknown when the source does not explicitly support it, including for a well-matched company. An Upwork row with missing applicant-country evidence cannot become proposal-ready; record a live owner review or capture a supported structured actor field first.
 
 For demand leads, use priority = 45% fit + 30% readiness + 25% freshness as a starting point. Freshness halves every seven days; only a supported opportunity posting date earns it. Directory records and undated or future-dated posts get no freshness bonus. Tune to the user's sales cycle. These are ranking scores, not probabilities of closing. Applicants/proposals may adjust priority only if the source reliably supplies them and the owner agrees; the bundled starter does not implement that adjustment. Cold priority separately combines fit, confirmed contactability and an evidenced timing signal; use its configurable weights and never substitute a collection date for demand.
 

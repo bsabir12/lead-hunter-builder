@@ -4,6 +4,18 @@ A downloadable AI skill that helps you build a lead hunting Google Sheet for you
 
 You can start with manual imports and a $0 budget. Automated searches are optional. Every installation uses **your own Google and provider accounts**. There are no shared keys, developer accounts, sample customer lists or private business data in this repository.
 
+## Share one link
+
+Send this skill link to the person installing it:
+
+<https://github.com/bsabir12/lead-hunter-builder/tree/main/lead-hunter-builder>
+
+They can paste this single message into a skill-capable Codex or Claude session:
+
+> Install the Lead Hunter Builder skill from this link. Then use it to build my lead hunting Google Sheet and guide me until the sheet is installed, tested with a usable first lead, and handed over for everyday use. Start with no paid searches. My business is [what you sell] for [who buys it].
+
+The guided workflow continues through profile setup, files, Google Sheet installation, offline and native checks, one representative lead or an approved bounded pilot, and owner handover. It does not stop at a ZIP or code file.
+
 ## Download and start
 
 Download [lead-hunter-builder.zip](lead-hunter-builder.zip?raw=true), then follow [START-HERE](lead-hunter-builder/START-HERE.md) to install in Claude or Codex.
@@ -19,12 +31,13 @@ Installation does not create a sheet or enable automation. The assistant should 
 - Business-specific match and readiness criteria, plus priority out of 100.
 - Essential lead fields appear automatically; working columns stay hidden. Choose only useful service details, such as accounting software, equipment or service radius.
 - Evidence links, original request text, services/offer and visible progress in Leads.
-- Separate demand and cold prospect imports; optional Apify jobs/public-search/Google Maps discovery and typed Jev fit assessments.
+- Separate demand and cold prospect imports; optional Apify service requests, jobs, public-search and Google Maps discovery with typed Jev fit assessments.
+- Upwork service-request flow: complete brief, stable-ID deduplication, applicant-eligibility gate, company/website confirmation, decision-maker research and bounded work-email discovery.
 - Own-account Hunter work-contact discovery, named-person email finding and mailbox verification, with source links, current-role review and credit caps.
 - Scoped selected-cell filling, stable IDs, deduplication and human-edit protection.
 - Budget checks, durable background work and optional Google Apps Script schedules.
 
-The starter supports named LinkedIn, Google, Upwork, X and Google Maps result formats. Cold prospects keep buying readiness Unknown; suitability, facts and hypotheses stay separate. Provider availability, pricing and actor schemas must be verified for each installation. Other sources require an explicit adapter and tests. People and websites remain unconfirmed when the evidence is insufficient. No emails or messages are sent automatically.
+The starter supports named LinkedIn, Google, Upwork, X and Google Maps result formats. Upwork rows cannot become proposal-ready until applicant eligibility is supported by captured evidence or owner review; target-client country is kept separate from the provider's legal application location. Cold prospects keep buying readiness Unknown; suitability, facts and hypotheses stay separate. Provider availability, pricing and actor schemas must be verified for each installation. Other service-request platforms use the same evidence pipeline through an explicit adapter and tests. People and websites remain unconfirmed when the evidence is insufficient. No emails, messages or proposals are sent automatically.
 
 ## Accounts and privacy
 
@@ -54,6 +67,10 @@ python3 lead-hunter-builder/scripts/test_portability.py --archive lead-hunter-bu
 Use a new/empty output folder. Build files offline; no credentials or provider calls are needed. [VALIDATION](VALIDATION.md) describes what was checked and what still needs a user's native/live pilot. [Architecture](lead-hunter-builder/references/architecture.md) explains the reusable core.
 
 MIT licensed. Provider APIs and platforms have their own terms and charges.
+
+### 1.4.0 guided service-demand workflow
+
+The skill now owns setup through a usable first lead and handover. Service businesses can start with a bounded Upwork/Apify pilot, then run complete-source Jev assessment, applicant-eligibility review, company/website confirmation, decision-maker research and public/Hunter/Apollo work-contact checks. New marketplaces plug into the same stable-ID and evidence contract. U.S.-only and similar applicant restrictions are separated from client geography and block proposal-ready routing when missing or incompatible.
 
 ### 1.3.2 source and public-email evidence
 

@@ -136,6 +136,15 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(p["schedule"]["days"], [])
         self.assertEqual(p["rules"]["min_hourly_usd"], 0)
 
+    def test_provider_locations_are_separate_and_validated(self):
+        self.p["rules"]["countries"] = ["United States"]
+        self.p["rules"]["provider_locations"] = ["Pakistan"]
+        self.assertEqual(validate(self.p)["rules"]["provider_locations"], ["Pakistan"])
+        self.assertIn("provider_locations", render(self.p))
+        self.p["rules"]["provider_locations"] = ["Pakistan, United States"]
+        with self.assertRaises(ValueError):
+            validate(self.p)
+
     def test_files_and_no_overwrite(self):
         with tempfile.TemporaryDirectory(prefix="lh-build-test-") as tmp:
             out = Path(tmp) / "output"
@@ -148,6 +157,15 @@ class BuilderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 build(self.p, out)
             self.assertEqual(before, (out / "Code.gs").read_bytes())
+
+    def test_owner_guide_requires_first_lead_and_handover(self):
+        with tempfile.TemporaryDirectory(prefix="lh-guide-test-") as tmp:
+            out = Path(tmp) / "output"
+            build(self.p, out)
+            guide = (out / "OWNER-GUIDE.md").read_text()
+            self.assertIn("one representative imported lead", guide)
+            self.assertIn("applicant eligibility", guide)
+            self.assertIn("Handover checklist", guide)
 
     def cold(self):
         self.p = json.loads((ROOT / "assets/profile.cold.example.json").read_text())
